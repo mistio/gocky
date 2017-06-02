@@ -7,8 +7,9 @@ import (
 )
 
 type Config struct {
-	HTTPRelays []HTTPConfig `toml:"http"`
-	UDPRelays  []UDPConfig  `toml:"udp"`
+	HTTPRelays     []HTTPConfig     `toml:"http"`
+	UDPRelays      []UDPConfig      `toml:"udp"`
+	BeringeiRelays []BeringeiConfig `toml:"beringei"`
 }
 
 type HTTPConfig struct {
@@ -80,6 +81,28 @@ type UDPOutputConfig struct {
 
 	// MTU sets the maximum output payload size, default is 1024
 	MTU int `toml:"mtu"`
+}
+
+type BeringeiConfig struct {
+	//Name identifies the beringei relay
+	Name string `toml:"name"`
+
+	// Addr is where the UDP relay will listen for packets
+	Addr string `toml:"bind-addr"`
+
+	// Set certificate in order to handle HTTPS requests
+	SSLCombinedPem string `toml:"ssl-combined-pem"`
+
+	// Outputs is a list of backend servers where writes will be forwarded
+	Outputs []BeringeiOutputConfig `toml:"output"`
+}
+
+type BeringeiOutputConfig struct {
+	// Name identifies the Beringei backend
+	Name string `toml:"name"`
+
+	// Location should be set to the host:port of the backend server
+	Location string `toml:"location"`
 }
 
 // LoadConfigFile parses the specified file into a Config object

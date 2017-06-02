@@ -36,6 +36,16 @@ func New(config Config) (*Service, error) {
 		s.relays[u.Name()] = u
 	}
 
+	for _, cfg := range config.BeringeiRelays {
+		b, err := NewBeringei(cfg)
+		if err != nil {
+			return nil, err
+		}
+		if s.relays[b.Name()] != nil {
+			return nil, fmt.Errorf("duplicate relay: %q", b.Name())
+		}
+		s.relays[b.Name()] = b
+	}
 	return s, nil
 }
 
