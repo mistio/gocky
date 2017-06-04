@@ -134,10 +134,11 @@ func (b *Beringei) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, p := range points {
-		log.Println(p)
+		log.Println("-----------------START-----------------")
+		a := InfluxToBeringeiPoint{point: p}
+		a.Transform()
+		log.Println("----------------------------------")
 	}
-
-	log.Println("----------------------------------")
 
 }
 
