@@ -90,8 +90,11 @@ type BeringeiConfig struct {
 	// Addr is where the UDP relay will listen for packets
 	Addr string `toml:"bind-addr"`
 
-	// Set certificate in order to handle HTTPS requests
+	// SSLCombinedPem set certificate in order to handle HTTPS requests
 	SSLCombinedPem string `toml:"ssl-combined-pem"`
+
+	// AMQPUrl will be used to connect to Rabbitmq (amqp://guest:guest@127.0.0.1:5672/)
+	AMQPUrl string `toml:"amqp-url"`
 
 	// Outputs is a list of backend servers where writes will be forwarded
 	Outputs []BeringeiOutputConfig `toml:"output"`

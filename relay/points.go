@@ -1,90 +1,41 @@
 package relay
 
 import (
-	"fmt"
-	"strconv"
+	"encoding/hex"
 
-	"github.com/influxdata/influxdb/models"
+	"golang.org/x/crypto/scrypt"
 )
 
-// TransformedPoint is an interface to transform models.ParsePointsWithPrecision
-// to desired output format
-type TransformedPoint interface {
-	// Transform will transform
-	Transform() error
+//BeringeiPoint is the Point that we push to Rabbitmq
+type BeringeiPoint struct {
+	Name      string
+	Timestamp int64
+	Tags      map[string]string
+	Field     string
+	Value     interface{}
+	ID        string
 }
 
-// InfluxToBeringeiPoint is a formatted Influxdb to BeringeiPoint
-type InfluxToBeringeiPoint struct {
-	point models.Point
-	// tags  []models.Tag
-	// tags map[string]string
-
-	metricName  string
-	machineID   string
-	beringeiKey string
-	fields      map[string]string
-	Timestamp   int64
-	Output      string
+// NewBeringeiPoint Initializes and returns a new BeringeiPoint
+func NewBeringeiPoint(name, field string, timestamp int64, tags map[string]string, value interface{}) *BeringeiPoint {
+	return &BeringeiPoint{
+		Name:      name,
+		Timestamp: timestamp,
+		Tags:      tags,
+		Field:     field,
+		Value:     value,
+	}
 }
 
-// Transform is an init/New equivalent
-func (p *InfluxToBeringeiPoint) Transform() error {
+// This will take the initial telegraf key and then generate a unique Id based in the key and the Field
+func (*BeringeiPoint) generateID(p *BeringeiPoint, key []byte) {
+	salt := []byte("asdfasdf")
 
-	p.metricName = string(p.point.Name())
-	p.Timestamp = p.point.UnixNano()
+	fieldByte := []byte(p.Field)
+	bytestring := append(key, fieldByte...)
 
-	p.findMachineID()
-
-	if p.machineID != "" {
-		p.beringeiKey += p.machineID + "."
-	}
-	p.beringeiKey += p.metricName
-
-	p.toFields()
-
-	for k, v := range p.fields {
-		newOutput := fmt.Sprintf("%s.%s %s %d\n", p.beringeiKey, k, v, p.Timestamp)
-		p.Output += newOutput
-
-	}
-	return nil
-}
-
-func (p *InfluxToBeringeiPoint) findMachineID() error {
-	for _, tag := range p.point.Tags() {
-		if string(tag.Key) == "machine_id" {
-			p.machineID = string(tag.Value)
-		}
-	}
-	return nil
-}
-
-func (p *InfluxToBeringeiPoint) toFields() error {
-	if p.fields == nil {
-		p.fields = make(map[string]string)
-	}
-
-	fi := p.point.FieldIterator()
-	for fi.Next() {
-		switch fi.Type() {
-		case models.Float:
-			v, _ := fi.FloatValue()
-			p.fields[string(fi.FieldKey())] = strconv.FormatFloat(v, 'E', -1, 64)
-		case models.Integer:
-			v, _ := fi.IntegerValue()
-			p.fields[string(fi.FieldKey())] = strconv.FormatInt(v, 10)
-		case models.String:
-			v := fi.StringValue()
-			p.fields[string(fi.FieldKey())] = v
-		case models.Boolean:
-			v, _ := fi.BooleanValue()
-			p.fields[string(fi.FieldKey())] = strconv.FormatBool(v)
-		case models.Empty:
-			p.fields[string(fi.FieldKey())] = ""
-		default:
-			panic("unknown type")
-		}
-	}
-	return nil
+	hash, _ := scrypt.Key(bytestring, salt, 16384, 8, 1, 32)
+	p.ID = hex.EncodeToString(hash)
+	// log.Println(string(p.ID))
+	// log.Println(p.Value)
 }
