@@ -119,7 +119,7 @@ func (b *Beringei) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Fatalf("%s: %s", "Could not open a channel", err)
 	}
 
-	beringeiQueue, err := rabbitmqCh.QueueDeclare(
+	_, err = rabbitmqCh.QueueDeclare(
 		"beringei", // name
 		false,      // durable
 		false,      // delete when usused
@@ -129,7 +129,7 @@ func (b *Beringei) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if err != nil {
-		log.Fatalf("%s: %s", "Failed to open a channel", err)
+		log.Fatalf("%s: %s", "Failed to declare Queue", err)
 	}
 
 	// fail early if we're missing the database
@@ -166,10 +166,7 @@ func (b *Beringei) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go pushPoints(points, rabbitmqCh, &beringeiQueue)
-	// go func() {
-
-	// }()
+	go pushPoints(points, b.ampqURL)
 
 }
 
@@ -194,7 +191,7 @@ func NewBeringeiBackend(cfg *BeringeiOutputConfig) (*beringeiBackend, error) {
 
 }
 
-func pushPoints(points []models.Point, ch *amqp.Channel, q *amqp.Queue) {
+func pushPoints(points []models.Point, amqpURL string) {
 	for _, p := range points {
 		// log.Println("-----------------START-----------------")
 		tags := make(map[string]string)
@@ -209,7 +206,7 @@ func pushPoints(points []models.Point, ch *amqp.Channel, q *amqp.Queue) {
 				v, _ := fi.FloatValue()
 				tmpPoint := NewBeringeiPoint(string(p.Name()), string(fi.FieldKey()), p.UnixNano(), tags, v)
 				tmpPoint.generateID(tmpPoint, p.Key())
-				pushToCache(tmpPoint, ch, q)
+				pushToCache(tmpPoint, amqpURL)
 				// parsedPoints = append(parsedPoints, tmpPoint)
 				// b, err := json.Marshal(tmpPoint)
 				// if err != nil {
@@ -222,7 +219,7 @@ func pushPoints(points []models.Point, ch *amqp.Channel, q *amqp.Queue) {
 				v, _ := fi.IntegerValue()
 				tmpPoint := NewBeringeiPoint(string(p.Name()), string(fi.FieldKey()), p.UnixNano(), tags, v)
 				tmpPoint.generateID(tmpPoint, p.Key())
-				pushToCache(tmpPoint, ch, q)
+				pushToCache(tmpPoint, amqpURL)
 				// parsedPoints = append(parsedPoints, tmpPoint)
 				// b, err := json.Marshal(tmpPoint)
 				// if err != nil {
@@ -247,7 +244,7 @@ func pushPoints(points []models.Point, ch *amqp.Channel, q *amqp.Queue) {
 
 }
 
-func pushToCache(p *BeringeiPoint, ch *amqp.Channel, q *amqp.Queue) {
+func pushToCache(p *BeringeiPoint, amqpURL string) {
 	if _, found := RelayCache.Get(p.ID); found {
 		log.Println("Found")
 		return
@@ -255,17 +252,30 @@ func pushToCache(p *BeringeiPoint, ch *amqp.Channel, q *amqp.Queue) {
 
 	log.Println("Not Found")
 	RelayCache.Set(p.ID, p.Value, cache.DefaultExpiration)
-	pushToRabbitmq(p, ch, q)
+	pushToRabbitmq(p, amqpURL)
 	return
 }
 
-func pushToRabbitmq(p *BeringeiPoint, ch *amqp.Channel, q *amqp.Queue) {
+func pushToRabbitmq(p *BeringeiPoint, amqpURL string) {
+	// fail early if we cannot connect to Rabbitmq
+	conn, err := amqp.Dial(amqpURL)
+	if err != nil {
+		log.Fatalf("%s: %s", "Could not connect to Rabbitmq", err)
+	}
+	defer conn.Close()
+
+	ch, err := conn.Channel()
+	if err != nil {
+		log.Fatalf("%s: %s", "Could not open a channel", err)
+	}
+	defer ch.Close()
+
 	b, _ := json.Marshal(p)
-	err := ch.Publish(
-		"berinei_exchange", // exchange
-		q.Name,             // routing Key
-		false,              // mandatory
-		false,              // immediate
+	err = ch.Publish(
+		"",         // exchange
+		"beringei", // routing Key
+		false,      // mandatory
+		false,      // immediate
 		amqp.Publishing{
 			ContentType: "text/plain",
 			Body:        b,
