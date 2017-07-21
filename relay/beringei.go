@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"bytes"
 	"compress/gzip"
 	"crypto/tls"
 	"encoding/json"
@@ -8,6 +9,8 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -24,6 +27,8 @@ type Beringei struct {
 
 	cert    string
 	ampqURL string
+
+	beringeiUpdateURL string
 
 	closing int64
 	l       net.Listener
@@ -47,6 +52,7 @@ func NewBeringei(cfg BeringeiConfig) (Relay, error) {
 	}
 
 	b.ampqURL = cfg.AMQPUrl
+	b.beringeiUpdateURL = cfg.BeringeiUpdateURL
 
 	for i := range cfg.Outputs {
 		backend, err := NewBeringeiBackend(&cfg.Outputs[i])
@@ -148,7 +154,7 @@ func (b *Beringei) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		body = b
 	}
 
-	log.Println(body)
+	// log.Println(body)
 
 	bodyBuf := getBuf()
 	_, err = bodyBuf.ReadFrom(body)
@@ -166,7 +172,7 @@ func (b *Beringei) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go pushPoints(points, b.ampqURL)
+	go pushPoints(points, b.ampqURL, b.beringeiUpdateURL)
 
 }
 
@@ -191,14 +197,13 @@ func NewBeringeiBackend(cfg *BeringeiOutputConfig) (*beringeiBackend, error) {
 
 }
 
-func pushPoints(points []models.Point, amqpURL string) {
+func pushPoints(points []models.Point, amqpURL, beringeiUpdateURL string) {
 	for _, p := range points {
-		// log.Println("-----------------START-----------------")
 		tags := make(map[string]string)
 		for _, v := range p.Tags() {
 			tags[string(v.Key)] = string(v.Value)
 		}
-		parsedPoints := make([]*BeringeiPoint, len(points))
+		parsedPoints := make([]string, 0, len(points))
 		fi := p.FieldIterator()
 		for fi.Next() {
 			switch fi.Type() {
@@ -207,50 +212,55 @@ func pushPoints(points []models.Point, amqpURL string) {
 				tmpPoint := NewBeringeiPoint(string(p.Name()), string(fi.FieldKey()), p.UnixNano(), tags, v)
 				tmpPoint.generateID(tmpPoint, p.Key())
 				pushToCache(tmpPoint, amqpURL)
-				// parsedPoints = append(parsedPoints, tmpPoint)
-				// b, err := json.Marshal(tmpPoint)
-				// if err != nil {
-				// 	log.Println(err)
-				// } else {
-				// 	log.Println(string(b))
-				// }
-				// p.fields[string(fi.FieldKey())] = strconv.FormatFloat(v, 'E', -1, 64)
+				if tmpPoint.ID != "" {
+					s := tmpPoint.ID + " " + strconv.FormatFloat(v, 'E', -1, 64) + " " + strconv.FormatInt(tmpPoint.Timestamp, 10)
+					parsedPoints = append(parsedPoints, s)
+				}
 			case models.Integer:
 				v, _ := fi.IntegerValue()
 				tmpPoint := NewBeringeiPoint(string(p.Name()), string(fi.FieldKey()), p.UnixNano(), tags, v)
 				tmpPoint.generateID(tmpPoint, p.Key())
 				pushToCache(tmpPoint, amqpURL)
-				// parsedPoints = append(parsedPoints, tmpPoint)
-				// b, err := json.Marshal(tmpPoint)
-				// if err != nil {
-				// 	log.Println(err)
-				// } else {
-				// 	log.Println(string(b))
-				// }
-				// p.fields[string(fi.FieldKey())] = strconv.FormatInt(v, 10)
-			case models.String:
-				log.Println("String values not supported")
-			case models.Boolean:
-				log.Println("Boolean values not supported")
-			case models.Empty:
-				log.Println("Empry values not supported")
+				if tmpPoint.ID != "" {
+					s := tmpPoint.ID + " " + strconv.FormatInt(v, 10) + " " + strconv.FormatInt(tmpPoint.Timestamp, 10)
+					parsedPoints = append(parsedPoints, s)
+				}
+			// case models.String:
+			// 	log.Println("String values not supported")
+			// case models.Boolean:
+			// 	log.Println("Boolean values not supported")
+			// case models.Empty:
+			// 	log.Println("Empry values not supported")
 			default:
 				log.Println("Unknown value type")
 			}
 		}
-		_ = parsedPoints
-		// log.Println("----------------------------------")
+		pushToBeringei(parsedPoints, beringeiUpdateURL)
 	}
 
 }
 
+func pushToBeringei(points []string, targetURL string) {
+	var bodyString string
+	for _, p := range points {
+		bodyString += p + "\n"
+	}
+	// This needs to be done, as beringei plain server does not accept empty line
+	bodyString = strings.Trim(bodyString, "\n")
+
+	bodyBuf := bytes.NewBufferString(bodyString)
+
+	http.Post(targetURL, "", bodyBuf)
+	return
+}
+
 func pushToCache(p *BeringeiPoint, amqpURL string) {
 	if _, found := RelayCache.Get(p.ID); found {
-		log.Println("Found")
+		// log.Println("Found")
 		return
 	}
 
-	log.Println("Not Found")
+	// log.Println("Not Found")
 	RelayCache.Set(p.ID, p.Value, cache.DefaultExpiration)
 	pushToRabbitmq(p, amqpURL)
 	return
@@ -284,7 +294,7 @@ func pushToRabbitmq(p *BeringeiPoint, amqpURL string) {
 	if err != nil {
 		log.Println(err)
 	} else {
-		log.Println("Success pushing to Rabbitmq")
+		// log.Println("Success pushing to Rabbitmq")
 	}
 
 }

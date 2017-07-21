@@ -1,26 +1,27 @@
 
 
-[[http]]
-name = "example-http"
-bind-addr = "127.0.0.1:9096"
-output = [
-    { name="local1", location = "http://127.0.0.1:8086/write" },
-    { name="local2", location = "http://127.0.0.1:7086/write" },
-]
-
-[[udp]]
-name = "example-udp"
-bind-addr = "127.0.0.1:9096"
-read-buffer = 0 # default
-output = [
-    { name="local1", location="127.0.0.1:8089", mtu=512 },
-    { name="local2", location="127.0.0.1:7089", mtu=1024 },
-]
+# [[http]]
+# name = "example-http"
+# bind-addr = "127.0.0.1:9096"
+# output = [
+#     { name="local1", location = "http://127.0.0.1:8086/write" },
+#     { name="local2", location = "http://127.0.0.1:7086/write" },
+# ]
+#
+# [[udp]]
+# name = "example-udp"
+# bind-addr = "127.0.0.1:9096"
+# read-buffer = 0 # default
+# output = [
+#     { name="local1", location="127.0.0.1:8089", mtu=512 },
+#     { name="local2", location="127.0.0.1:7089", mtu=1024 },
+# ]
 
 [[beringei]]
 name = "example-beringei"
 bind-addr = "0.0.0.0:9097"
 amqp-url = "amqp://guest:guest@127.0.0.1:5672/"
+beringei-update-url = "http://127.0.0.1:9990/update"
 output = [
     { name="local1", location="127.0.0.1:9990"}
 ]

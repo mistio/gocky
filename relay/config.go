@@ -96,6 +96,8 @@ type BeringeiConfig struct {
 	// AMQPUrl will be used to connect to Rabbitmq (amqp://guest:guest@127.0.0.1:5672/)
 	AMQPUrl string `toml:"amqp-url"`
 
+	BeringeiUpdateURL string `toml:"beringei-update-url"`
+
 	// Outputs is a list of backend servers where writes will be forwarded
 	Outputs []BeringeiOutputConfig `toml:"output"`
 }
