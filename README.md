@@ -2,20 +2,20 @@
 
 This project adds a basic high availability layer to InfluxDB. With the right architecture and disaster recovery processes, this achieves a highly available setup.
 
-*NOTE:* `influxdb-relay` must be built with Go 1.5+
+*NOTE:* `gocky` must be built with Go 1.5+
 
 ## Usage
 
 To build from source and run:
 
 ```sh
-$ # Install influxdb-relay to your $GOPATH/bin
-$ go get -u github.com/influxdata/influxdb-relay
+$ # Install gocky to your $GOPATH/bin
+$ go get -u github.com/influxdata/gocky
 $ # Edit your configuration file
-$ cp $GOPATH/src/github.com/influxdata/influxdb-relay/sample.toml ./relay.toml
+$ cp $GOPATH/src/github.com/influxdata/gocky/sample.toml ./relay.toml
 $ vim relay.toml
 $ # Start relay!
-$ $GOPATH/bin/influxdb-relay -config relay.toml
+$ $GOPATH/bin/gocky -config relay.toml
 ```
 
 ## Configuration
@@ -29,7 +29,7 @@ name = "example-http"
 bind-addr = "127.0.0.1:9096"
 
 # Enable HTTPS requests.
-ssl-combined-pem = "/etc/ssl/influxdb-relay.pem"
+ssl-combined-pem = "/etc/ssl/gocky.pem"
 
 # Array of InfluxDB instances to use as backends for Relay.
 output = [
@@ -155,9 +155,9 @@ As this relay does not handle queries, it will not implement any sharding logic.
 
 ## Caveats
 
-While `influxdb-relay` does provide some level of high availability, there are a few scenarios that need to be accounted for:
+While `gocky` does provide some level of high availability, there are a few scenarios that need to be accounted for:
 
-- `influxdb-relay` will not relay the `/query` endpoint, and this includes schema modification (create database, `DROP`s, etc). This means that databases must be created before points are written to the backends.
+- `gocky` will not relay the `/query` endpoint, and this includes schema modification (create database, `DROP`s, etc). This means that databases must be created before points are written to the backends.
 - Continuous queries will still only write their results locally. If a server goes down, the continuous query will have to be backfilled after the data has been recovered for that instance.
 - Overwriting points is potentially unpredictable. For example, given servers A and B, if B is down, and point X is written (we'll call the value X1) just before B comes back online, that write is queued behind every other write that occurred while B was offline. Once B is back online, the first buffered write succeeds, and all new writes are now allowed to pass-through. At this point (before X1 is written to B), X is written again (with value X2 this time) to both A and B. When the relay reaches the end of B's buffered writes, it will write X (with value X1) to B... At this point A now has X2, but B has X1.
   - It is probably best to avoid re-writing points (if possible). Otherwise, please be aware that overwriting the same field for a given point can lead to data differences.
@@ -165,20 +165,20 @@ While `influxdb-relay` does provide some level of high availability, there are a
 
 ## Building
 
-The recommended method for building `influxdb-relay` is to use Docker
+The recommended method for building `gocky` is to use Docker
 and the included `Dockerfile_build_ubuntu64` Dockerfile, which
 includes all of the necessary dependencies.
 
 To build the docker image, you can run:
 
 ```
-docker build -f Dockerfile_build_ubuntu64 -t influxdb-relay-builder:latest .
+docker build -f Dockerfile_build_ubuntu64 -t gocky-builder:latest .
 ```
 
 And then to build the project:
 
 ```
-docker run --rm -v $(pwd):/root/go/src/github.com/influxdata/influxdb-relay influxdb-relay-builder
+docker run --rm -v $(pwd):/root/go/src/github.com/influxdata/gocky gocky-builder
 ```
 
 *NOTE* By default, builds will be for AMD64 Linux (since the container
@@ -190,7 +190,7 @@ and leave any build output in the `./build` directory. To see a list
 of available build commands, append a `--help` to the command above.
 
 ```
-docker run -v $(pwd):/root/go/src/github.com/influxdata/influxdb-relay influxdb-relay-builder --help
+docker run -v $(pwd):/root/go/src/github.com/influxdata/gocky gocky-builder --help
 ```
 
 ### Packages
@@ -199,7 +199,7 @@ To build system packages for Linux (`deb`, `rpm`, etc), use the
 `--package` option:
 
 ```
-docker run -v $(pwd):/root/go/src/github.com/influxdata/influxdb-relay influxdb-relay-builder --package
+docker run -v $(pwd):/root/go/src/github.com/influxdata/gocky gocky-builder --package
 ```
 
 To build packages for other platforms or architectures, use the

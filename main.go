@@ -7,7 +7,7 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/mistio/influxdb-relay/relay"
+	"github.com/mistio/gocky/relay"
 )
 
 var (

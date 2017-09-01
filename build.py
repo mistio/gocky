@@ -13,28 +13,28 @@ import logging
 import argparse
 
 # Packaging variables
-PACKAGE_NAME = "influxdb-relay"
+PACKAGE_NAME = "gocky"
 INSTALL_ROOT_DIR = "/usr/bin"
-LOG_DIR = "/var/log/influxdb-relay"
-DATA_DIR = "/var/lib/influxdb-relay"
-SCRIPT_DIR = "/usr/lib/influxdb-relay/scripts"
-CONFIG_DIR = "/etc/influxdb-relay"
+LOG_DIR = "/var/log/gocky"
+DATA_DIR = "/var/lib/gocky"
+SCRIPT_DIR = "/usr/lib/gocky/scripts"
+CONFIG_DIR = "/etc/gocky"
 LOGROTATE_DIR = "/etc/logrotate.d"
 
 INIT_SCRIPT = "scripts/init.sh"
-SYSTEMD_SCRIPT = "scripts/influxdb-relay.service"
+SYSTEMD_SCRIPT = "scripts/gocky.service"
 POSTINST_SCRIPT = "scripts/post-install.sh"
 POSTUNINST_SCRIPT = "scripts/post-uninstall.sh"
 LOGROTATE_SCRIPT = "scripts/logrotate"
 DEFAULT_CONFIG = "sample.toml"
 
 CONFIGURATION_FILES = [
-    CONFIG_DIR + '/influxdb-relay.conf',
-    LOGROTATE_DIR + '/influxdb-relay',
+    CONFIG_DIR + '/gocky.conf',
+    LOGROTATE_DIR + '/gocky',
 ]
 
 PACKAGE_LICENSE = "MIT"
-PACKAGE_URL = "https://github.com/influxdata/influxdb-relay"
+PACKAGE_URL = "https://github.com/influxdata/gocky"
 DESCRIPTION = "Service to replicate InfluxDB data for high availability."
 
 prereqs = [ 'git', 'go' ]
@@ -61,7 +61,7 @@ for f in CONFIGURATION_FILES:
     fpm_common_args += " --config-files {}".format(f)
 
 targets = {
-    'influxdb-relay' : './main.go'
+    'gocky' : './main.go'
 }
 
 supported_builds = {
@@ -106,18 +106,18 @@ def package_scripts(build_root, config_only=False):
     """
     if config_only:
         logging.debug("Copying configuration to build directory.")
-        shutil.copyfile(DEFAULT_CONFIG, os.path.join(build_root, "influxdb-relay.conf"))
-        os.chmod(os.path.join(build_root, "influxdb-relay.conf"), 0o644)
+        shutil.copyfile(DEFAULT_CONFIG, os.path.join(build_root, "gocky.conf"))
+        os.chmod(os.path.join(build_root, "gocky.conf"), 0o644)
     else:
         logging.debug("Copying scripts and sample configuration to build directory.")
         shutil.copyfile(INIT_SCRIPT, os.path.join(build_root, SCRIPT_DIR[1:], INIT_SCRIPT.split('/')[1]))
         os.chmod(os.path.join(build_root, SCRIPT_DIR[1:], INIT_SCRIPT.split('/')[1]), 0o644)
         shutil.copyfile(SYSTEMD_SCRIPT, os.path.join(build_root, SCRIPT_DIR[1:], SYSTEMD_SCRIPT.split('/')[1]))
         os.chmod(os.path.join(build_root, SCRIPT_DIR[1:], SYSTEMD_SCRIPT.split('/')[1]), 0o644)
-        shutil.copyfile(LOGROTATE_SCRIPT, os.path.join(build_root, LOGROTATE_DIR[1:], "influxdb-relay"))
-        os.chmod(os.path.join(build_root, LOGROTATE_DIR[1:], "influxdb-relay"), 0o644)
-        shutil.copyfile(DEFAULT_CONFIG, os.path.join(build_root, CONFIG_DIR[1:], "influxdb-relay.conf"))
-        os.chmod(os.path.join(build_root, CONFIG_DIR[1:], "influxdb-relay.conf"), 0o644)
+        shutil.copyfile(LOGROTATE_SCRIPT, os.path.join(build_root, LOGROTATE_DIR[1:], "gocky"))
+        os.chmod(os.path.join(build_root, LOGROTATE_DIR[1:], "gocky"), 0o644)
+        shutil.copyfile(DEFAULT_CONFIG, os.path.join(build_root, CONFIG_DIR[1:], "gocky.conf"))
+        os.chmod(os.path.join(build_root, CONFIG_DIR[1:], "gocky.conf"), 0o644)
 
 def go_get(branch, update=False, no_uncommitted=False):
     """Retrieve build dependencies or restore pinned dependencies.
