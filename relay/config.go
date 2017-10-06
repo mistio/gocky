@@ -100,10 +100,21 @@ type BeringeiConfig struct {
 
 	// Outputs is a list of backend servers where writes will be forwarded
 	Outputs []BeringeiOutputConfig `toml:"output"`
+
+	//GraphiteOutput is a list of graphite backends
+	GraphiteOutput []GraphiteOutputConfig `toml:"graphite-output"`
 }
 
 type BeringeiOutputConfig struct {
 	// Name identifies the Beringei backend
+	Name string `toml:"name"`
+
+	// Location should be set to the host:port of the backend server
+	Location string `toml:"location"`
+}
+
+type GraphiteOutputConfig struct {
+	// Name identifies the Graphite backend
 	Name string `toml:"name"`
 
 	// Location should be set to the host:port of the backend server
