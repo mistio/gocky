@@ -4,12 +4,12 @@ services:
 
   beringei:
     image: gcr.io/mist-ops/beringei:plain
-    command: "./beringei/service/beringei_main -beringei_configuration_path /tmp/beringei.json -create_directories -sleep_between_bucket_finalization_secs 60 -allowed_timestamp_behind 300 -bucket_size 600 -buckets 144 -logtostderr -v=2"
+    command: "./beringei/service/beringei_main -beringei_configuration_path /etc/beringei/beringei.json -create_directories -sleep_between_bucket_finalization_secs 60 -allowed_timestamp_behind 300 -bucket_size 600 -buckets 144 -logtostderr -v=2"
     hostname: beringei
     ports:
       - 9999:9999
     volumes:
-      - .compose/beringei.json:/tmp/beringei.json
+      - beringei-config:/etc/beringei
 
   beringei-http:
     image: gcr.io/mist-ops/beringei:plain
