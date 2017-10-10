@@ -45,12 +45,12 @@ func (*BeringeiPoint) generateID(p *BeringeiPoint, key []byte) {
 	// log.Println(p.Value)
 }
 
-func GraphiteMetric(id, metricName string) telegraf.Metric {
+func GraphiteMetric(id, metricName string, timestamp int64, value interface{}) telegraf.Metric {
 	m1, _ := metric.New(
 		metricName,
 		map[string]string{"id": id},
-		map[string]interface{}{"myfield": float64(3.14)},
-		time.Now(),
+		map[string]interface{}{"myfield": value},
+		time.Unix(timestamp, 0),
 	)
 	log.Println(id, metricName)
 	return m1
