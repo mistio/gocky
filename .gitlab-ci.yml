@@ -17,3 +17,7 @@ build_gocky_image:
     - docker tag gcr.io/mist-ops/gocky:$CI_COMMIT_SHA gcr.io/mist-ops/gocky:$CI_COMMIT_REF_SLUG
     - docker push gcr.io/mist-ops/gocky:$CI_COMMIT_SHA
     - docker push gcr.io/mist-ops/gocky:$CI_COMMIT_REF_SLUG
+    - docker tag gcr.io/mist-ops/gocky:$CI_COMMIT_SHA mist/gocky:$CI_COMMIT_SHA
+    - docker tag gcr.io/mist-ops/gocky:$CI_COMMIT_SHA mist/gocky:$CI_COMMIT_REF_SLUG
+    - docker push mist/gocky:$CI_COMMIT_SHA
+    - docker push mist/gocky:$CI_COMMIT_REF_SLUG
