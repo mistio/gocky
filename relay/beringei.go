@@ -114,7 +114,7 @@ func (b *Beringei) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 
 	g := &graphite.Graphite{
-		Servers: []string{"127.0.0.1:2003"},
+		Servers: []string{"graphite:2003"},
 		Prefix:  "bucky",
 	}
 
