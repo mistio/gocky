@@ -225,7 +225,7 @@ func pushPoints(points []models.Point, amqpURL string, g *graphite.Graphite, ber
 			case models.Float:
 				v, _ := fi.FloatValue()
 				tmpPoint := NewBeringeiPoint(string(p.Name()), string(fi.FieldKey()), p.UnixNano(), tags, v)
-				grphPoint := GraphiteMetric(strconv.FormatUint(p.HashID(), 10), string(p.Name()), p.UnixNano(), v)
+				grphPoint := GraphiteMetric(tags["machine_id"], string(p.Name()), p.UnixNano(), v)
 				// log.Println(p.HashID())
 				graphiteMetrics = append(graphiteMetrics, grphPoint)
 				tmpPoint.generateID(tmpPoint, p.Key())
@@ -237,7 +237,7 @@ func pushPoints(points []models.Point, amqpURL string, g *graphite.Graphite, ber
 			case models.Integer:
 				v, _ := fi.IntegerValue()
 				tmpPoint := NewBeringeiPoint(string(p.Name()), string(fi.FieldKey()), p.UnixNano(), tags, v)
-				grphPoint := GraphiteMetric(strconv.FormatUint(p.HashID(), 10), string(p.Name()), p.UnixNano(), v)
+				grphPoint := GraphiteMetric(tags["machine_id"], string(p.Name()), p.UnixNano(), v)
 				graphiteMetrics = append(graphiteMetrics, grphPoint)
 				tmpPoint.generateID(tmpPoint, p.Key())
 				pushToCache(tmpPoint, amqpURL)

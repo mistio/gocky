@@ -2,7 +2,6 @@ package relay
 
 import (
 	"encoding/hex"
-	"log"
 	"time"
 
 	"github.com/influxdata/telegraf"
@@ -52,6 +51,6 @@ func GraphiteMetric(id, metricName string, timestamp int64, value interface{}) t
 		map[string]interface{}{"myfield": value},
 		time.Unix(timestamp, 0),
 	)
-	log.Println(id, metricName)
+	// log.Println(id, metricName)
 	return m1
 }
