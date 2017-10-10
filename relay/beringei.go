@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/influxdata/influxdb/models"
+	"github.com/influxdata/telegraf/plugins/outputs/graphite"
 	cache "github.com/patrickmn/go-cache"
 	"github.com/streadway/amqp"
 )
@@ -110,6 +111,16 @@ func (b *Beringei) Stop() error {
 func (b *Beringei) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	start := time.Now()
+
+	g := graphite.Graphite{
+		Servers: []string{"127.0.0.1:2003"},
+		Prefix:  "my.prefix",
+	}
+
+	err := g.Connect()
+	if err != nil {
+		log.Fatalf("Could not connect to graphite: %s", err)
+	}
 
 	queryParams := r.URL.Query()
 
@@ -235,7 +246,7 @@ func pushPoints(points []models.Point, amqpURL, beringeiUpdateURL string) {
 				log.Println("Unknown value type")
 			}
 		}
-		pushToBeringei(parsedPoints, beringeiUpdateURL)
+		// pushToBeringei(parsedPoints, beringeiUpdateURL)
 	}
 
 }
