@@ -49,8 +49,7 @@ func GraphiteMetric(id, metricName string, timestamp int64, value interface{}) t
 		metricName,
 		map[string]string{"id": id},
 		map[string]interface{}{"myfield": value},
-		time.Unix(timestamp, 0),
+		time.Unix(timestamp/1000000000, 0).UTC(),
 	)
-	// log.Println(id, metricName)
 	return m1
 }
