@@ -13,7 +13,7 @@ stages:
 build_gocky_image:
   <<: *docker_build_template
   script:
-    - docker build --rm -t gcr.io/mist-ops/gocky:$CI_COMMIT_SHA
+    - docker build --rm -t gcr.io/mist-ops/gocky:$CI_COMMIT_SHA .
     - docker tag gcr.io/mist-ops/gocky:$CI_COMMIT_SHA gcr.io/mist-ops/gocky:$CI_COMMIT_REF_SLUG
     - docker push gcr.io/mist-ops/gocky:$CI_COMMIT_SHA
     - docker push gcr.io/mist-ops/gocky:$CI_COMMIT_REF_SLUG
