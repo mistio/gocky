@@ -1,7 +1,13 @@
-FROM golang:1.8
+FROM golang:1.8-alpine
 
-COPY gocky /gocky
+RUN apk add --update --no-cache git
 
-COPY compose.toml /config.toml
+COPY . /go/src/github.com/mistio/gocky
 
-CMD /gocky -config /config.toml
+WORKDIR /go/src/github.com/mistio/gocky
+
+RUN go get
+
+RUN go-wrapper install
+
+CMD ["go-wrapper", "run"] # ["app"]

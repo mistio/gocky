@@ -1,0 +1,9 @@
+gocky
+.gitlab-ci.yml
+Godeps
+*.toml
+scripts/
+.compose/
+docker-compose.yml
+*.sh
+Dockerfile
