@@ -2,6 +2,11 @@ package relay
 
 import (
 	"encoding/hex"
+	"log"
+	"time"
+
+	"github.com/influxdata/telegraf"
+	"github.com/influxdata/telegraf/metric"
 
 	"golang.org/x/crypto/scrypt"
 )
@@ -38,4 +43,15 @@ func (*BeringeiPoint) generateID(p *BeringeiPoint, key []byte) {
 	p.ID = hex.EncodeToString(hash)
 	// log.Println(string(p.ID))
 	// log.Println(p.Value)
+}
+
+func GraphiteMetric(id, metricName string) telegraf.Metric {
+	m1, _ := metric.New(
+		metricName,
+		map[string]string{"id": id},
+		map[string]interface{}{"myfield": float64(3.14)},
+		time.Now(),
+	)
+	log.Println(id, metricName)
+	return m1
 }

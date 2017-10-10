@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/influxdata/influxdb/models"
+	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/outputs/graphite"
 	cache "github.com/patrickmn/go-cache"
 	"github.com/streadway/amqp"
@@ -112,7 +113,7 @@ func (b *Beringei) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	start := time.Now()
 
-	g := graphite.Graphite{
+	g := &graphite.Graphite{
 		Servers: []string{"127.0.0.1:2003"},
 		Prefix:  "bucky",
 	}
@@ -182,10 +183,10 @@ func (b *Beringei) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusBadRequest, "unable to parse points")
 		return
 	}
-	for _, p := range points {
-		log.Print(p)
-	}
-	go pushPoints(points, b.ampqURL, b.beringeiUpdateURL)
+	// for _, p := range points {
+	// 	log.Print(p)
+	// }
+	go pushPoints(points, b.ampqURL, g, b.beringeiUpdateURL)
 
 }
 
@@ -210,19 +211,23 @@ func NewBeringeiBackend(cfg *BeringeiOutputConfig) (*beringeiBackend, error) {
 
 }
 
-func pushPoints(points []models.Point, amqpURL, beringeiUpdateURL string) {
+func pushPoints(points []models.Point, amqpURL string, g *graphite.Graphite, beringeiUpdateURL string) {
 	for _, p := range points {
 		tags := make(map[string]string)
 		for _, v := range p.Tags() {
 			tags[string(v.Key)] = string(v.Value)
 		}
 		parsedPoints := make([]string, 0, len(points))
+		graphiteMetrics := make([]telegraf.Metric, 0, len(points))
 		fi := p.FieldIterator()
 		for fi.Next() {
 			switch fi.Type() {
 			case models.Float:
 				v, _ := fi.FloatValue()
 				tmpPoint := NewBeringeiPoint(string(p.Name()), string(fi.FieldKey()), p.UnixNano(), tags, v)
+				grphPoint := GraphiteMetric(strconv.FormatUint(p.HashID(), 10), string(p.Name()))
+				// log.Println(p.HashID())
+				graphiteMetrics = append(graphiteMetrics, grphPoint)
 				tmpPoint.generateID(tmpPoint, p.Key())
 				pushToCache(tmpPoint, amqpURL)
 				if tmpPoint.ID != "" {
@@ -232,6 +237,8 @@ func pushPoints(points []models.Point, amqpURL, beringeiUpdateURL string) {
 			case models.Integer:
 				v, _ := fi.IntegerValue()
 				tmpPoint := NewBeringeiPoint(string(p.Name()), string(fi.FieldKey()), p.UnixNano(), tags, v)
+				grphPoint := GraphiteMetric(strconv.FormatUint(p.HashID(), 10), string(p.Name()))
+				graphiteMetrics = append(graphiteMetrics, grphPoint)
 				tmpPoint.generateID(tmpPoint, p.Key())
 				pushToCache(tmpPoint, amqpURL)
 				if tmpPoint.ID != "" {
@@ -248,7 +255,8 @@ func pushPoints(points []models.Point, amqpURL, beringeiUpdateURL string) {
 				log.Println("Unknown value type")
 			}
 		}
-		// pushToBeringei(parsedPoints, beringeiUpdateURL)
+		pushToBeringei(parsedPoints, beringeiUpdateURL)
+		g.Write(graphiteMetrics)
 	}
 
 }
