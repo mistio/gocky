@@ -114,7 +114,7 @@ func (b *Beringei) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	g := graphite.Graphite{
 		Servers: []string{"127.0.0.1:2003"},
-		Prefix:  "my.prefix",
+		Prefix:  "bucky",
 	}
 
 	err := g.Connect()
@@ -182,7 +182,9 @@ func (b *Beringei) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusBadRequest, "unable to parse points")
 		return
 	}
-
+	for _, p := range points {
+		log.Print(p)
+	}
 	go pushPoints(points, b.ampqURL, b.beringeiUpdateURL)
 
 }
