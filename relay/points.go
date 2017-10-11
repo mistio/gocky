@@ -1,13 +1,12 @@
 package relay
 
 import (
+	"crypto/sha256"
 	"encoding/hex"
 	"time"
 
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/metric"
-
-	"golang.org/x/crypto/scrypt"
 )
 
 //BeringeiPoint is the Point that we push to Rabbitmq
@@ -33,15 +32,13 @@ func NewBeringeiPoint(name, field string, timestamp int64, tags map[string]strin
 
 // This will take the initial telegraf key and then generate a unique Id based in the key and the Field
 func (*BeringeiPoint) generateID(p *BeringeiPoint, key []byte) {
-	salt := []byte("asdfasdf")
 
 	fieldByte := []byte(p.Field)
 	bytestring := append(key, fieldByte...)
 
-	hash, _ := scrypt.Key(bytestring, salt, 16384, 8, 1, 32)
+	h := sha256.New()
+	hash := h.Sum(bytestring)
 	p.ID = hex.EncodeToString(hash)
-	// log.Println(string(p.ID))
-	// log.Println(p.Value)
 }
 
 // GraphiteMetric transforms a BeringeiPoint to Graphite compatible format

@@ -282,11 +282,9 @@ func pushToBeringei(points []string, targetURL string) {
 
 func pushToCache(p *BeringeiPoint, amqpURL string) {
 	if _, found := RelayCache.Get(p.ID); found {
-		// log.Println("Found")
 		return
 	}
 
-	// log.Println("Not Found")
 	RelayCache.Set(p.ID, p.Value, cache.DefaultExpiration)
 	pushToRabbitmq(p, amqpURL)
 	return
