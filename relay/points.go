@@ -52,8 +52,18 @@ func GraphiteMetric(metricName string, tags map[string]string, timestamp int64, 
 		// convert cpu0, cpu1, cpu-total -> 0, 1, total
 		r, _ := regexp.Compile(`.*[cpu-](.*[a-zA-Z0-9])`)
 		match := r.FindStringSubmatch(tags["cpu"])
-		cpuTag := match[len(match)-1]
-		parsedMetric = map[string]interface{}{cpuTag + "." + field: value}
+		cpuFix := match[len(match)-1]
+
+		r, _ = regexp.Compile(`usage_(.*[a-zA-Z0-9])`)
+		match = r.FindStringSubmatch(field)
+		var fieldFix string
+		if len(match) > 0 {
+			fieldFix = match[len(match)-1]
+		} else {
+			fieldFix = field
+		}
+
+		parsedMetric = map[string]interface{}{cpuFix + "." + fieldFix: value}
 	case "disk":
 		parsedMetric = map[string]interface{}{tags["device"] + "." + field: value}
 	case "diskio":
@@ -61,7 +71,8 @@ func GraphiteMetric(metricName string, tags map[string]string, timestamp int64, 
 	case "net":
 		parsedMetric = map[string]interface{}{tags["interface"] + "." + field: value}
 	case "mem":
-		parsedMetric = map[string]interface{}{"memory": value}
+		metricName = "memory"
+		parsedMetric = map[string]interface{}{field: value}
 	default:
 		parsedMetric = map[string]interface{}{field: value}
 	}

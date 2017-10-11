@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/influxdata/influxdb/models"
 	"github.com/influxdata/telegraf"
@@ -227,8 +228,10 @@ func pushPoints(points []models.Point, amqpURL string, g *graphite.Graphite, ber
 			case models.Float:
 				v, _ := fi.FloatValue()
 				tmpPoint := NewBeringeiPoint(string(p.Name()), string(fi.FieldKey()), p.UnixNano(), tags, v)
-				grphPoint := GraphiteMetric(string(p.Name()), tags, p.UnixNano(), v, string(fi.FieldKey()))
-				graphiteMetrics = append(graphiteMetrics, grphPoint)
+				if utf8.ValidString(string(fi.FieldKey())) {
+					grphPoint := GraphiteMetric(string(p.Name()), tags, p.UnixNano(), v, string(fi.FieldKey()))
+					graphiteMetrics = append(graphiteMetrics, grphPoint)
+				}
 				tmpPoint.generateID(tmpPoint, p.Key())
 				pushToCache(tmpPoint, amqpURL)
 				if tmpPoint.ID != "" {
@@ -238,22 +241,24 @@ func pushPoints(points []models.Point, amqpURL string, g *graphite.Graphite, ber
 			case models.Integer:
 				v, _ := fi.IntegerValue()
 				tmpPoint := NewBeringeiPoint(string(p.Name()), string(fi.FieldKey()), p.UnixNano(), tags, v)
-				grphPoint := GraphiteMetric(string(p.Name()), tags, p.UnixNano(), v, string(fi.FieldKey()))
-				graphiteMetrics = append(graphiteMetrics, grphPoint)
+				if utf8.ValidString(string(fi.FieldKey())) {
+					grphPoint := GraphiteMetric(string(p.Name()), tags, p.UnixNano(), v, string(fi.FieldKey()))
+					graphiteMetrics = append(graphiteMetrics, grphPoint)
+				}
 				tmpPoint.generateID(tmpPoint, p.Key())
 				pushToCache(tmpPoint, amqpURL)
 				if tmpPoint.ID != "" {
 					s := tmpPoint.ID + " " + strconv.FormatInt(v, 10) + " " + strconv.FormatInt(tmpPoint.Timestamp, 10)
 					parsedPoints = append(parsedPoints, s)
 				}
-			// case models.String:
-			// 	log.Println("String values not supported")
-			// case models.Boolean:
-			// 	log.Println("Boolean values not supported")
-			// case models.Empty:
-			// 	log.Println("Empry values not supported")
-			default:
-				log.Println("Unknown value type")
+				// case models.String:
+				// 	log.Println("String values not supported")
+				// case models.Boolean:
+				// 	log.Println("Boolean values not supported")
+				// case models.Empty:
+				// 	log.Println("Empry values not supported")
+				// default:
+				// 	log.Println("Unknown value type")
 			}
 		}
 		pushToBeringei(parsedPoints, beringeiUpdateURL)
