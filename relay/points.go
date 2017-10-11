@@ -44,11 +44,29 @@ func (*BeringeiPoint) generateID(p *BeringeiPoint, key []byte) {
 	// log.Println(p.Value)
 }
 
-func GraphiteMetric(id, metricName string, timestamp int64, value interface{}) telegraf.Metric {
+// GraphiteMetric transforms a BeringeiPoint to Graphite compatible format
+func GraphiteMetric(metricName string, tags map[string]string, timestamp int64, value interface{}, field string) telegraf.Metric {
+
+	var parsedMetric map[string]interface{}
+
+	switch metricName {
+	case "cpu":
+		parsedMetric = map[string]interface{}{tags["cpu"] + "." + field: value}
+	case "disk":
+		parsedMetric = map[string]interface{}{tags["device"] + "." + field: value}
+	case "diskio":
+		parsedMetric = map[string]interface{}{tags["name"] + "." + field: value}
+	case "net":
+		parsedMetric = map[string]interface{}{tags["interface"] + "." + field: value}
+	default:
+		parsedMetric = map[string]interface{}{field: value}
+	}
+
+	// metric.Ne
 	m1, _ := metric.New(
 		metricName,
-		map[string]string{"id": id},
-		map[string]interface{}{"myfield": value},
+		map[string]string{"id": tags["machine_id"]},
+		parsedMetric,
 		time.Unix(timestamp/1000000000, 0).UTC(),
 	)
 	return m1
