@@ -35,7 +35,8 @@ type Beringei struct {
 	closing int64
 	l       net.Listener
 
-	backends []*beringeiBackend
+	backends        []*beringeiBackend
+	graphiteBackend string
 }
 
 var pointsCh chan *BeringeiPoint
@@ -55,6 +56,7 @@ func NewBeringei(cfg BeringeiConfig) (Relay, error) {
 
 	b.ampqURL = cfg.AMQPUrl
 	b.beringeiUpdateURL = cfg.BeringeiUpdateURL
+	b.graphiteBackend = cfg.GraphiteOutput
 
 	for i := range cfg.Outputs {
 		backend, err := NewBeringeiBackend(&cfg.Outputs[i])
@@ -114,7 +116,7 @@ func (b *Beringei) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 
 	g := &graphite.Graphite{
-		Servers: []string{"graphite:2003"},
+		Servers: []string{b.graphiteBackend},
 		Prefix:  "bucky",
 	}
 

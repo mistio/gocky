@@ -4,12 +4,12 @@ services:
 
   beringei:
     image: gcr.io/mist-ops/beringei:plain
-    command: "./beringei/service/beringei_main -beringei_configuration_path /etc/beringei/beringei.json -create_directories -sleep_between_bucket_finalization_secs 60 -allowed_timestamp_behind 300 -bucket_size 600 -buckets 144 -logtostderr -v=2"
+    command: "./beringei/service/beringei_main -beringei_configuration_path /tmp/beringei.json -create_directories -sleep_between_bucket_finalization_secs 60 -allowed_timestamp_behind 300 -bucket_size 600 -buckets 144 -logtostderr -v=2"
     hostname: beringei
     ports:
       - 9999:9999
     volumes:
-      - beringei-config:/etc/beringei
+      - .compose/beringei.json:/tmp/beringei.json
 
   beringei-http:
     image: gcr.io/mist-ops/beringei:plain
@@ -27,13 +27,24 @@ services:
       - 5672:5672
       - 15672:15627
 
-  gocky:
-    image: gcr.io/mist-ops/gocky:v0.5
+  graphite:
+    image: nickstenning/graphite
     ports:
-      - 9097:9097
-    volumes:
-      - .compose/config.toml:/congig.toml
-    depends_on:
-      - beringei
-      - beringei-http
-      - rabbitmq
+      - 8080:80
+      - 2003:2003
+      - 2004:2004
+      - 7002:7002
+
+volumes:
+  beringei-config: {}
+
+  # gocky:
+  #   image: gcr.io/mist-ops/gocky:v0.5
+  #   ports:
+  #     - 9097:9097
+  #   volumes:
+  #     - .compose/config.toml:/congig.toml
+  #   depends_on:
+  #     - beringei
+  #     - beringei-http
+  #     - rabbitmq

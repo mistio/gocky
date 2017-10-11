@@ -25,3 +25,4 @@ beringei-update-url = "http://127.0.0.1:9990/update"
 output = [
     { name="local1", location="127.0.0.1:9990"}
 ]
+graphite-output = "127.0.0.1:2003"
