@@ -3,6 +3,7 @@ package relay
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"regexp"
 	"time"
 
 	"github.com/influxdata/telegraf"
@@ -48,13 +49,19 @@ func GraphiteMetric(metricName string, tags map[string]string, timestamp int64, 
 
 	switch metricName {
 	case "cpu":
-		parsedMetric = map[string]interface{}{tags["cpu"] + "." + field: value}
+		// convert cpu0, cpu1, cpu-total -> 0, 1, total
+		r, _ := regexp.Compile(`.*[cpu-](.*[a-zA-Z0-9])`)
+		match := r.FindStringSubmatch(tags["cpu"])
+		cpuTag := match[len(match)-1]
+		parsedMetric = map[string]interface{}{cpuTag + "." + field: value}
 	case "disk":
 		parsedMetric = map[string]interface{}{tags["device"] + "." + field: value}
 	case "diskio":
 		parsedMetric = map[string]interface{}{tags["name"] + "." + field: value}
 	case "net":
 		parsedMetric = map[string]interface{}{tags["interface"] + "." + field: value}
+	case "mem":
+		parsedMetric = map[string]interface{}{"memory": value}
 	default:
 		parsedMetric = map[string]interface{}{field: value}
 	}
