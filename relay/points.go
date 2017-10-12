@@ -57,8 +57,9 @@ func GraphiteMetric(metricName string, tags map[string]string, timestamp int64, 
 	case "net":
 		parsedMetric = map[string]interface{}{tags["interface"] + "." + field: value}
 	case "mem":
-		metricName = "memory"
-		parsedMetric = map[string]interface{}{field: value}
+		parsedMetric, metricName = parseMem(tags, field, metricName, value)
+	case "system":
+		parsedMetric, metricName = parseSystem(tags, field, metricName, value)
 	default:
 		parsedMetric = map[string]interface{}{field: value}
 	}
@@ -72,9 +73,9 @@ func GraphiteMetric(metricName string, tags map[string]string, timestamp int64, 
 		)
 
 		return m1
-	} else {
-		return nil
 	}
+
+	return nil
 }
 
 func parseCPU(tags map[string]string, field string, value interface{}) (parsedMetric map[string]interface{}) {
@@ -109,4 +110,32 @@ func parseCPU(tags map[string]string, field string, value interface{}) (parsedMe
 	parsedMetric = map[string]interface{}{cpuFix + "." + fieldFix: value}
 
 	return parsedMetric
+}
+
+func parseMem(tags map[string]string, field, metricName string, value interface{}) (parsedMetric map[string]interface{}, metricNameFixed string) {
+	parsedMetric = map[string]interface{}{field: value}
+	metricNameFixed = "memory"
+	return parsedMetric, metricNameFixed
+}
+
+func parseSystem(tags map[string]string, field, metricName string, value interface{}) (parsedMetric map[string]interface{}, metricNameFixed string) {
+	fieldFix := field
+	metricNameFixed = metricName
+
+	const loadName = "load"
+
+	switch field {
+	case "load1":
+		metricNameFixed = loadName
+		fieldFix = "shortterm"
+	case "load5":
+		metricNameFixed = loadName
+		fieldFix = "midterm"
+	case "load15":
+		metricNameFixed = loadName
+		fieldFix = "longterm"
+	}
+
+	parsedMetric = map[string]interface{}{fieldFix: value}
+	return parsedMetric, metricNameFixed
 }
