@@ -38,6 +38,9 @@ type Beringei struct {
 
 	backends        []*beringeiBackend
 	graphiteBackend string
+
+	beringeiEnabled bool
+	graphiteEnabled bool
 }
 
 var pointsCh chan *BeringeiPoint
@@ -66,6 +69,18 @@ func NewBeringei(cfg BeringeiConfig) (Relay, error) {
 		}
 
 		b.backends = append(b.backends, backend)
+	}
+
+	if len(b.backends) > 0 {
+		b.beringeiEnabled = true
+	} else {
+		b.beringeiEnabled = false
+	}
+
+	if b.graphiteBackend != "" {
+		b.graphiteEnabled = true
+	} else {
+		b.graphiteEnabled = false
 	}
 
 	return b, nil
@@ -121,9 +136,11 @@ func (b *Beringei) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Prefix:  "bucky",
 	}
 
-	err := g.Connect()
-	if err != nil {
-		log.Fatalf("Could not connect to graphite: %s", err)
+	if b.graphiteEnabled {
+		err := g.Connect()
+		if err != nil {
+			log.Fatalf("Could not connect to graphite: %s", err)
+		}
 	}
 
 	queryParams := r.URL.Query()
@@ -189,7 +206,7 @@ func (b *Beringei) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// for _, p := range points {
 	// 	log.Print(p)
 	// }
-	go pushPoints(points, b.ampqURL, g, b.beringeiUpdateURL)
+	go pushPoints(points, b.ampqURL, g, b.beringeiUpdateURL, b.beringeiEnabled, b.graphiteEnabled)
 
 }
 
@@ -214,7 +231,7 @@ func NewBeringeiBackend(cfg *BeringeiOutputConfig) (*beringeiBackend, error) {
 
 }
 
-func pushPoints(points []models.Point, amqpURL string, g *graphite.Graphite, beringeiUpdateURL string) {
+func pushPoints(points []models.Point, amqpURL string, g *graphite.Graphite, beringeiUpdateURL string, beringeiEnabled, graphiteEnabled bool) {
 	for _, p := range points {
 		tags := make(map[string]string)
 		for _, v := range p.Tags() {
@@ -228,28 +245,38 @@ func pushPoints(points []models.Point, amqpURL string, g *graphite.Graphite, ber
 			case models.Float:
 				v, _ := fi.FloatValue()
 				tmpPoint := NewBeringeiPoint(string(p.Name()), string(fi.FieldKey()), p.UnixNano(), tags, v)
-				if utf8.ValidString(string(fi.FieldKey())) {
-					grphPoint := GraphiteMetric(string(p.Name()), tags, p.UnixNano(), v, string(fi.FieldKey()))
-					graphiteMetrics = append(graphiteMetrics, grphPoint)
+				if graphiteEnabled {
+					if utf8.ValidString(string(fi.FieldKey())) {
+						grphPoint := GraphiteMetric(string(p.Name()), tags, p.UnixNano(), v, string(fi.FieldKey()))
+						graphiteMetrics = append(graphiteMetrics, grphPoint)
+					}
 				}
-				tmpPoint.generateID(tmpPoint, p.Key())
-				pushToCache(tmpPoint, amqpURL)
-				if tmpPoint.ID != "" {
-					s := tmpPoint.ID + " " + strconv.FormatFloat(v, 'E', -1, 64) + " " + strconv.FormatInt(tmpPoint.Timestamp, 10)
-					parsedPoints = append(parsedPoints, s)
+
+				if beringeiEnabled {
+					tmpPoint.generateID(tmpPoint, p.Key())
+					pushToCache(tmpPoint, amqpURL)
+					if tmpPoint.ID != "" {
+						s := tmpPoint.ID + " " + strconv.FormatFloat(v, 'E', -1, 64) + " " + strconv.FormatInt(tmpPoint.Timestamp, 10)
+						parsedPoints = append(parsedPoints, s)
+					}
 				}
 			case models.Integer:
 				v, _ := fi.IntegerValue()
 				tmpPoint := NewBeringeiPoint(string(p.Name()), string(fi.FieldKey()), p.UnixNano(), tags, v)
-				if utf8.ValidString(string(fi.FieldKey())) {
-					grphPoint := GraphiteMetric(string(p.Name()), tags, p.UnixNano(), v, string(fi.FieldKey()))
-					graphiteMetrics = append(graphiteMetrics, grphPoint)
+				if graphiteEnabled {
+					if utf8.ValidString(string(fi.FieldKey())) {
+						grphPoint := GraphiteMetric(string(p.Name()), tags, p.UnixNano(), v, string(fi.FieldKey()))
+						graphiteMetrics = append(graphiteMetrics, grphPoint)
+					}
 				}
-				tmpPoint.generateID(tmpPoint, p.Key())
-				pushToCache(tmpPoint, amqpURL)
-				if tmpPoint.ID != "" {
-					s := tmpPoint.ID + " " + strconv.FormatInt(v, 10) + " " + strconv.FormatInt(tmpPoint.Timestamp, 10)
-					parsedPoints = append(parsedPoints, s)
+
+				if beringeiEnabled {
+					tmpPoint.generateID(tmpPoint, p.Key())
+					pushToCache(tmpPoint, amqpURL)
+					if tmpPoint.ID != "" {
+						s := tmpPoint.ID + " " + strconv.FormatInt(v, 10) + " " + strconv.FormatInt(tmpPoint.Timestamp, 10)
+						parsedPoints = append(parsedPoints, s)
+					}
 				}
 				// case models.String:
 				// 	log.Println("String values not supported")
@@ -261,10 +288,15 @@ func pushPoints(points []models.Point, amqpURL string, g *graphite.Graphite, ber
 				// 	log.Println("Unknown value type")
 			}
 		}
-		pushToBeringei(parsedPoints, beringeiUpdateURL)
-		err := g.Write(graphiteMetrics)
-		if err != nil {
-			log.Println(err)
+
+		if beringeiEnabled {
+			pushToBeringei(parsedPoints, beringeiUpdateURL)
+		}
+		if graphiteEnabled {
+			err := g.Write(graphiteMetrics)
+			if err != nil {
+				log.Println(err)
+			}
 		}
 	}
 
