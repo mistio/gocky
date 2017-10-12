@@ -248,7 +248,9 @@ func pushPoints(points []models.Point, amqpURL string, g *graphite.Graphite, ber
 				if graphiteEnabled {
 					if utf8.ValidString(string(fi.FieldKey())) {
 						grphPoint := GraphiteMetric(string(p.Name()), tags, p.UnixNano(), v, string(fi.FieldKey()))
-						graphiteMetrics = append(graphiteMetrics, grphPoint)
+						if grphPoint != nil {
+							graphiteMetrics = append(graphiteMetrics, grphPoint)
+						}
 					}
 				}
 
@@ -266,7 +268,9 @@ func pushPoints(points []models.Point, amqpURL string, g *graphite.Graphite, ber
 				if graphiteEnabled {
 					if utf8.ValidString(string(fi.FieldKey())) {
 						grphPoint := GraphiteMetric(string(p.Name()), tags, p.UnixNano(), v, string(fi.FieldKey()))
-						graphiteMetrics = append(graphiteMetrics, grphPoint)
+						if grphPoint != nil {
+							graphiteMetrics = append(graphiteMetrics, grphPoint)
+						}
 					}
 				}
 
