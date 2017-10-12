@@ -55,7 +55,7 @@ func GraphiteMetric(metricName string, tags map[string]string, timestamp int64, 
 	case "diskio":
 		parsedMetric = map[string]interface{}{tags["name"] + "." + field: value}
 	case "net":
-		parsedMetric = map[string]interface{}{tags["interface"] + "." + field: value}
+		parsedMetric, metricName = parseNet(tags, field, metricName, value)
 	case "mem":
 		parsedMetric, metricName = parseMem(tags, field, metricName, value)
 	case "system":
@@ -154,4 +154,33 @@ func parseSwap(tags map[string]string, field string, value interface{}) (parsedM
 
 	parsedMetric = map[string]interface{}{fieldFix: value}
 	return parsedMetric
+}
+
+func parseNet(tags map[string]string, field, metricName string, value interface{}) (parsedMetric map[string]interface{}, metricNameFixed string) {
+	fieldFix := field
+	metricNameFixed = "interface"
+
+	// drop all interfaces
+	if tags["interface"] == "all" {
+		return nil, metricNameFixed
+	}
+
+	switch field {
+	case "bytes_recv":
+		fieldFix = "if_octets.rx"
+	case "bytes_sent":
+		fieldFix = "if_octets.tx"
+	case "packets_recv":
+		fieldFix = "if_packets.rx"
+	case "packets_sent":
+		fieldFix = "if_packets.tx"
+	case "err_in":
+		fieldFix = "if_errors.rx"
+	case "err_out":
+		fieldFix = "if_errors.tx"
+	}
+
+	parsedMetric = map[string]interface{}{tags["interface"] + "." + fieldFix: value}
+
+	return parsedMetric, metricNameFixed
 }
