@@ -78,11 +78,13 @@ func GraphiteMetric(metricName string, tags map[string]string, timestamp int64, 
 }
 
 func parseCPU(tags map[string]string, field string, value interface{}) (parsedMetric map[string]interface{}) {
+
 	// convert cpu0, cpu1, cpu-total -> 0, 1, total
 	r, _ := regexp.Compile(`.*[cpu-](.*[a-zA-Z0-9])`)
 	match := r.FindStringSubmatch(tags["cpu"])
 	cpuFix := match[len(match)-1]
 
+	// for now we drop the total subdirectory
 	if cpuFix == "total" {
 		return nil
 	}
@@ -96,6 +98,14 @@ func parseCPU(tags map[string]string, field string, value interface{}) (parsedMe
 		fieldFix = field
 	}
 
+	// transform fields to collectd compatible ones
+	switch fieldFix {
+	case "iowait":
+		fieldFix = "wait"
+	case "irq":
+		fieldFix = "interrupt"
+
+	}
 	parsedMetric = map[string]interface{}{cpuFix + "." + fieldFix: value}
 
 	return parsedMetric
