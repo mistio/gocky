@@ -60,6 +60,8 @@ func GraphiteMetric(metricName string, tags map[string]string, timestamp int64, 
 		parsedMetric, metricName = parseMem(tags, field, metricName, value)
 	case "system":
 		parsedMetric, metricName = parseSystem(tags, field, metricName, value)
+	case "swap":
+		parsedMetric = parseSwap(tags, field, value)
 	default:
 		parsedMetric = map[string]interface{}{field: value}
 	}
@@ -138,4 +140,18 @@ func parseSystem(tags map[string]string, field, metricName string, value interfa
 
 	parsedMetric = map[string]interface{}{fieldFix: value}
 	return parsedMetric, metricNameFixed
+}
+
+func parseSwap(tags map[string]string, field string, value interface{}) (parsedMetric map[string]interface{}) {
+	fieldFix := field
+
+	switch field {
+	case "in":
+		fieldFix = "swap_io.in"
+	case "out":
+		fieldFix = "swap_io.out"
+	}
+
+	parsedMetric = map[string]interface{}{fieldFix: value}
+	return parsedMetric
 }
