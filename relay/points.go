@@ -117,7 +117,21 @@ func parseCPU(tags map[string]string, field string, value interface{}) (parsedMe
 func parseMem(tags map[string]string, field, metricName string, value interface{}) (parsedMetric map[string]interface{}, metricNameFixed string) {
 	parsedMetric = map[string]interface{}{field: value}
 	metricNameFixed = "memory"
-	return parsedMetric, metricNameFixed
+
+	switch field {
+	case
+		"buffered",
+		"cached",
+		"free",
+		"slab_recl",
+		"slab_unrecl",
+		"used":
+		return parsedMetric, metricNameFixed
+	default:
+		metricNameFixed = "memory_extra"
+		return parsedMetric, metricNameFixed
+
+	}
 }
 
 func parseSystem(tags map[string]string, field, metricName string, value interface{}) (parsedMetric map[string]interface{}, metricNameFixed string) {
