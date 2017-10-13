@@ -49,7 +49,7 @@ func GraphiteMetric(metricName string, tags map[string]string, timestamp int64, 
 
 	switch metricName {
 	case "cpu":
-		parsedMetric = parseCPU(tags, field, value)
+		parsedMetric, metricName = parseCPU(tags, field, metricName, value)
 	case "disk":
 		parsedMetric = map[string]interface{}{tags["device"] + "." + field: value}
 	case "diskio":
@@ -80,7 +80,9 @@ func GraphiteMetric(metricName string, tags map[string]string, timestamp int64, 
 	return nil
 }
 
-func parseCPU(tags map[string]string, field string, value interface{}) (parsedMetric map[string]interface{}) {
+func parseCPU(tags map[string]string, field, metricName string, value interface{}) (parsedMetric map[string]interface{}, metricNameFixed string) {
+
+	metricNameFixed = "cpu"
 
 	// convert cpu0, cpu1, cpu-total -> 0, 1, total
 	r, _ := regexp.Compile(`.*[cpu-](.*[a-zA-Z0-9])`)
@@ -89,7 +91,7 @@ func parseCPU(tags map[string]string, field string, value interface{}) (parsedMe
 
 	// for now we drop the total subdirectory
 	if cpuFix == "total" {
-		return nil
+		metricNameFixed = "cpu_extra"
 	}
 
 	r, _ = regexp.Compile(`usage_(.*[a-zA-Z0-9])`)
@@ -111,7 +113,20 @@ func parseCPU(tags map[string]string, field string, value interface{}) (parsedMe
 	}
 	parsedMetric = map[string]interface{}{cpuFix + "." + fieldFix: value}
 
-	return parsedMetric
+	switch fieldFix {
+	case "idle",
+		"interrupt",
+		"nice",
+		"softirq",
+		"steal",
+		"system",
+		"user",
+		"wait":
+		return parsedMetric, metricNameFixed
+	default:
+		metricNameFixed = "cpu_extra"
+		return parsedMetric, metricNameFixed
+	}
 }
 
 func parseMem(tags map[string]string, field, metricName string, value interface{}) (parsedMetric map[string]interface{}, metricNameFixed string) {
