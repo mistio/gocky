@@ -53,7 +53,7 @@ func GraphiteMetric(metricName string, tags map[string]string, timestamp int64, 
 	case "disk":
 		parsedMetric = map[string]interface{}{tags["device"] + "." + field: value}
 	case "diskio":
-		parsedMetric = map[string]interface{}{tags["name"] + "." + field: value}
+		parsedMetric, metricName = parseDiskio(tags, field, metricName, value)
 	case "net":
 		parsedMetric, metricName = parseNet(tags, field, metricName, value)
 	case "mem":
@@ -210,6 +210,29 @@ func parseNet(tags map[string]string, field, metricName string, value interface{
 	}
 
 	parsedMetric = map[string]interface{}{tags["interface"] + "." + fieldFix: value}
+
+	return parsedMetric, metricNameFixed
+}
+
+func parseDiskio(tags map[string]string, field, metricName string, value interface{}) (parsedMetric map[string]interface{}, metricNameFixed string) {
+	// parsedMetric = map[string]interface{}{field: value}
+	metricNameFixed = "disk"
+	fieldFix := field
+
+	switch field {
+	case "write_time":
+		fieldFix = "disk_time.write"
+	case "read_time":
+		fieldFix = "disk_time.read"
+	case "write_bytes":
+		fieldFix = "disk_octets.write"
+	case "read_bytes":
+		fieldFix = "disk_octets.read"
+	default:
+		metricNameFixed = "disk_extra"
+	}
+
+	parsedMetric = map[string]interface{}{tags["name"] + "." + fieldFix: value}
 
 	return parsedMetric, metricNameFixed
 }
