@@ -145,6 +145,7 @@ func (b *Beringei) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	queryParams := r.URL.Query()
 
+	log.Println(r.Header)
 	// fail early if we cannot connect to Rabbitmq
 	conn, err := amqp.Dial(b.ampqURL)
 	if err != nil {

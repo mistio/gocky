@@ -10,6 +10,7 @@ type Config struct {
 	HTTPRelays     []HTTPConfig     `toml:"http"`
 	UDPRelays      []UDPConfig      `toml:"udp"`
 	BeringeiRelays []BeringeiConfig `toml:"beringei"`
+	GraphiteRelays []GraphiteConfig `toml:"graphite"`
 }
 
 type HTTPConfig struct {
@@ -101,12 +102,34 @@ type BeringeiConfig struct {
 	// Outputs is a list of backend servers where writes will be forwarded
 	Outputs []BeringeiOutputConfig `toml:"output"`
 
-	//GraphiteOutput is a list of graphite backends
+	// GraphiteOutput is a list of graphite backends
 	GraphiteOutput string `toml:"graphite-output"`
 }
 
 type BeringeiOutputConfig struct {
 	// Name identifies the Beringei backend
+	Name string `toml:"name"`
+
+	// Location should be set to the host:port of the backend server
+	Location string `toml:"location"`
+}
+
+type GraphiteConfig struct {
+	// Name identifies the graphite relay
+	Name string `toml:"name"`
+
+	// Addr is where the Graphite Relay will listen for packets
+	Addr string `toml:"bind-addr"`
+
+	// SSLCombinedPem set certificate in order to handle HTTPS requests
+	SSLCombinedPem string `toml:"ssl-combined-pem"`
+
+	// A list of graphite backend servers
+	Outputs []GraphiteOutputConfig `toml:"output"`
+}
+
+type GraphiteOutputConfig struct {
+	// Name identifies the graphite backend
 	Name string `toml:"name"`
 
 	// Location should be set to the host:port of the backend server
