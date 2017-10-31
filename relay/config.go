@@ -124,6 +124,16 @@ type GraphiteConfig struct {
 	// SSLCombinedPem set certificate in order to handle HTTPS requests
 	SSLCombinedPem string `toml:"ssl-combined-pem"`
 
+	// EnableMetering toggles metering stats to Rabbitmq. You have to setup AMQPUrl for this
+	EnableMetering bool `toml:"enable-metering"`
+
+	// AMQPUrl will be used to connect to Rabbitmq (amqp://guest:guest@127.0.0.1:5672/)
+	AMQPUrl string `toml:"amqp-url"`
+
+	// DropUnauthorized will drop samples that do not come from traefik
+	// If set to false, it will create an "Unknown" directory in graphite
+	DropUnauthorized bool `toml:"drop-unauthorized"`
+
 	// A list of graphite backend servers
 	Outputs []GraphiteOutputConfig `toml:"output"`
 }

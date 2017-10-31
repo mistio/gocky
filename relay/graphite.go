@@ -27,6 +27,11 @@ type GraphiteRelay struct {
 	closing int64
 	l       net.Listener
 
+	enableMetering bool
+	ampqURL        string
+
+	dropUnauthorized bool
+
 	backends []*graphiteBackend
 }
 
@@ -39,7 +44,6 @@ func (g *GraphiteRelay) Name() string {
 }
 
 func (g *GraphiteRelay) Run() error {
-	log.Println("Graphi")
 	l, err := net.Listen("tcp", g.addr)
 	if err != nil {
 		return err
@@ -150,6 +154,17 @@ func NewGraphiteRelay(cfg GraphiteConfig) (Relay, error) {
 
 		g.backends = append(g.backends, backend)
 	}
+
+	g.enableMetering = cfg.EnableMetering
+	g.ampqURL = cfg.AMQPUrl
+
+	if g.enableMetering && g.ampqURL == "" {
+		g.enableMetering = false
+		log.Println("You have to set AMQPUrl in config for metering to work")
+		log.Println("Disabling metering for now")
+	}
+
+	g.dropUnauthorized = cfg.DropUnauthorized
 
 	return g, nil
 }
