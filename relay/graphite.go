@@ -77,62 +77,6 @@ func (g *GraphiteRelay) Stop() error {
 
 }
 
-func (g *GraphiteRelay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-
-	graphiteServers := make([]string, len(g.backends))
-	for i := range g.backends {
-		graphiteServers = append(graphiteServers, g.backends[i].location)
-	}
-	graphiteClient := &graphite.Graphite{
-		Servers: graphiteServers,
-		Prefix:  "bucky",
-	}
-
-	err := graphiteClient.Connect()
-	if err != nil {
-		jsonError(w, http.StatusInternalServerError, "unable to connect to graphite")
-		log.Fatalf("Could not connect to graphite: %s", err)
-	}
-
-	queryParams := r.URL.Query()
-
-	if r.URL.Path != "/write" {
-		jsonError(w, 204, "Dummy response for db creation")
-		return
-	}
-
-	var body = r.Body
-	if r.Header.Get("Content-Encoding") == "gzip" {
-		b, err := gzip.NewReader(r.Body)
-		if err != nil {
-			jsonError(w, http.StatusBadRequest, "unable to decode gzip body")
-		}
-		defer b.Close()
-		body = b
-	}
-
-	bodyBuf := getBuf()
-	_, err = bodyBuf.ReadFrom(body)
-	if err != nil {
-		putBuf(bodyBuf)
-		jsonError(w, http.StatusInternalServerError, "problem reading request body")
-		return
-	}
-
-	precision := queryParams.Get("precision")
-	points, err := models.ParsePointsWithPrecision(bodyBuf.Bytes(), start, precision)
-	if err != nil {
-		putBuf(bodyBuf)
-		jsonError(w, http.StatusBadRequest, "unable to parse points")
-		return
-	}
-
-	go pushToGraphite(points, graphiteClient)
-	// telegraf expects a 204 response on write
-	w.WriteHeader(204)
-}
-
 func NewGraphiteRelay(cfg GraphiteConfig) (Relay, error) {
 	g := new(GraphiteRelay)
 
@@ -188,12 +132,83 @@ type graphiteBackend struct {
 	location string
 }
 
-func pushToGraphite(points []models.Point, g *graphite.Graphite) {
+func (g *GraphiteRelay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+
+	graphiteServers := make([]string, len(g.backends))
+	for i := range g.backends {
+		graphiteServers = append(graphiteServers, g.backends[i].location)
+	}
+	graphiteClient := &graphite.Graphite{
+		Servers: graphiteServers,
+		Prefix:  "bucky",
+	}
+
+	conErr := graphiteClient.Connect()
+	if conErr != nil {
+		jsonError(w, http.StatusInternalServerError, "unable to connect to graphite")
+		log.Fatalf("Could not connect to graphite: %s", conErr)
+	}
+
+	queryParams := r.URL.Query()
+
+	if r.URL.Path != "/write" {
+		jsonError(w, 204, "Dummy response for db creation")
+		return
+	}
+
+	var body = r.Body
+	if r.Header.Get("Content-Encoding") == "gzip" {
+		b, err := gzip.NewReader(r.Body)
+		if err != nil {
+			jsonError(w, http.StatusBadRequest, "unable to decode gzip body")
+		}
+		defer b.Close()
+		body = b
+	}
+
+	bodyBuf := getBuf()
+	_, err := bodyBuf.ReadFrom(body)
+	if err != nil {
+		putBuf(bodyBuf)
+		jsonError(w, http.StatusInternalServerError, "problem reading request body")
+		return
+	}
+
+	precision := queryParams.Get("precision")
+	points, err := models.ParsePointsWithPrecision(bodyBuf.Bytes(), start, precision)
+	if err != nil {
+		putBuf(bodyBuf)
+		jsonError(w, http.StatusBadRequest, "unable to parse points")
+		return
+	}
+
+	machineID := ""
+	if r.Header["X-Gocky-Tag-Machine-Id"] != nil {
+		machineID = r.Header["X-Gocky-Tag-Machine-Id"][0]
+	} else {
+		if g.dropUnauthorized {
+			log.Println("Gocky Headers are missing. Dropping packages...")
+			jsonError(w, http.StatusForbidden, "cannot find Gocky headers")
+			return
+		}
+	}
+
+	go pushToGraphite(points, graphiteClient, machineID)
+	// telegraf expects a 204 response on write
+	w.WriteHeader(204)
+}
+
+func pushToGraphite(points []models.Point, g *graphite.Graphite, machineID string) {
 	for _, p := range points {
 		tags := make(map[string]string)
 		for _, v := range p.Tags() {
 			tags[string(v.Key)] = string(v.Value)
 		}
+		if machineID == "" {
+			machineID = "Unknown." + tags["machine_id"]
+		}
+		tags["machine_id"] = machineID
 		graphiteMetrics := make([]telegraf.Metric, 0, len(points))
 		fi := p.FieldIterator()
 		for fi.Next() {
