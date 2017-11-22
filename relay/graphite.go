@@ -4,9 +4,11 @@ import (
 	"compress/gzip"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
@@ -15,6 +17,10 @@ import (
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/outputs/graphite"
 )
+
+// Metering Read-Write mutex
+var mu = &sync.RWMutex{}
+var metering = make(map[string]map[string]int)
 
 // GraphiteRelay is a relay for graphite backends
 type GraphiteRelay struct {
@@ -102,11 +108,11 @@ func NewGraphiteRelay(cfg GraphiteConfig) (Relay, error) {
 	g.enableMetering = cfg.EnableMetering
 	g.ampqURL = cfg.AMQPUrl
 
-	if g.enableMetering && g.ampqURL == "" {
-		g.enableMetering = false
-		log.Println("You have to set AMQPUrl in config for metering to work")
-		log.Println("Disabling metering for now")
-	}
+	// if g.enableMetering && g.ampqURL == "" {
+	// 	g.enableMetering = false
+	// 	log.Println("You have to set AMQPUrl in config for metering to work")
+	// 	log.Println("Disabling metering for now")
+	// }
 
 	g.dropUnauthorized = cfg.DropUnauthorized
 
@@ -152,6 +158,20 @@ func (g *GraphiteRelay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	queryParams := r.URL.Query()
 
+	if r.URL.Path == "/metrics" {
+		resp := ""
+		t := time.Now().UnixNano()
+		mu.RLock()
+		for orgID, machineMap := range metering {
+			for machineID, samples := range machineMap {
+				resp += fmt.Sprintf("gocky_samples_total{relay=graphite,orgID=%s,machineID=%s} %d %d\n", orgID, machineID, samples, t)
+			}
+		}
+		mu.RUnlock()
+		io.WriteString(w, resp)
+		return
+	}
+
 	if r.URL.Path != "/write" {
 		jsonError(w, 204, "Dummy response for db creation")
 		return
@@ -195,6 +215,20 @@ func (g *GraphiteRelay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go pushToGraphite(points, graphiteClient, machineID)
+
+	if g.enableMetering {
+		orgID := "Unauthorized"
+		if r.Header["X-Gocky-Tag-Org-Id"] != nil {
+			orgID = r.Header["X-Gocky-Tag-Org-Id"][0]
+		}
+
+		mu.Lock()
+		prevCounter := metering[orgID][machineID]
+		// metering[orgID][machineID] += len(points)
+		metering[orgID] = map[string]int{machineID: prevCounter + len(points)}
+		mu.Unlock()
+	}
+
 	// telegraf expects a 204 response on write
 	w.WriteHeader(204)
 }
