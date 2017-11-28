@@ -1,0 +1,23 @@
+stages:
+  - build
+
+.docker_build_template: &docker_build_template
+  stage: build
+  before_script:
+    # Loging with gcr.io
+    - docker login --username "$DOCKER_USERNAME" -u _json_key -p "$KEYFILE_JSON" https://gcr.io
+  tags:
+    - builder
+  dependencies: []
+
+build_gocky_image:
+  <<: *docker_build_template
+  script:
+    - docker build --rm -t gcr.io/mist-ops/gocky:$CI_COMMIT_SHA .
+    - docker tag gcr.io/mist-ops/gocky:$CI_COMMIT_SHA gcr.io/mist-ops/gocky:$CI_COMMIT_REF_SLUG
+    - docker push gcr.io/mist-ops/gocky:$CI_COMMIT_SHA
+    - docker push gcr.io/mist-ops/gocky:$CI_COMMIT_REF_SLUG
+    - docker tag gcr.io/mist-ops/gocky:$CI_COMMIT_SHA mist/gocky:$CI_COMMIT_SHA
+    - docker tag gcr.io/mist-ops/gocky:$CI_COMMIT_SHA mist/gocky:$CI_COMMIT_REF_SLUG
+    - docker push mist/gocky:$CI_COMMIT_SHA
+    - docker push mist/gocky:$CI_COMMIT_REF_SLUG

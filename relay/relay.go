@@ -46,6 +46,18 @@ func New(config Config) (*Service, error) {
 		}
 		s.relays[b.Name()] = b
 	}
+
+	for _, cfg := range config.GraphiteRelays {
+		g, err := NewGraphiteRelay(cfg)
+		if err != nil {
+			return nil, err
+		}
+		if s.relays[g.Name()] != nil {
+			return nil, fmt.Errorf("duplicate relay: %q", g.Name())
+		}
+		s.relays[g.Name()] = g
+
+	}
 	return s, nil
 }
 

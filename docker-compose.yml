@@ -27,13 +27,24 @@ services:
       - 5672:5672
       - 15672:15627
 
-  gocky:
-    image: gcr.io/mist-ops/gocky:v0.5
+  graphite:
+    image: nickstenning/graphite
     ports:
-      - 9097:9097
-    volumes:
-      - .compose/config.toml:/congig.toml
-    depends_on:
-      - beringei
-      - beringei-http
-      - rabbitmq
+      - 8080:80
+      - 2003:2003
+      - 2004:2004
+      - 7002:7002
+
+volumes:
+  beringei-config: {}
+
+  # gocky:
+  #   image: gcr.io/mist-ops/gocky:v0.5
+  #   ports:
+  #     - 9097:9097
+  #   volumes:
+  #     - .compose/config.toml:/congig.toml
+  #   depends_on:
+  #     - beringei
+  #     - beringei-http
+  #     - rabbitmq

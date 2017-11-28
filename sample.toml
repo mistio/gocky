@@ -17,11 +17,34 @@
 #     { name="local2", location="127.0.0.1:7089", mtu=1024 },
 # ]
 
-[[beringei]]
-name = "example-beringei"
+# [[beringei]]
+# name = "example-beringei"
+# bind-addr = "0.0.0.0:9097"
+# amqp-url = "amqp://guest:guest@127.0.0.1:5672/"
+# beringei-update-url = "http://127.0.0.1:9990/update"
+# output = [
+#     { name="local1", location="127.0.0.1:9990"}
+# ]
+# graphite-output = "127.0.0.1:2003"
+
+[[graphite]]
+name = "example-graphite"
 bind-addr = "0.0.0.0:9097"
-amqp-url = "amqp://guest:guest@127.0.0.1:5672/"
-beringei-update-url = "http://127.0.0.1:9990/update"
+
+# output is a list of graphite backends
 output = [
-    { name="local1", location="127.0.0.1:9990"}
+    { name="local1", location="graphite:2003"}
 ]
+
+# metering will send stats for samples/org/machine
+# you have to also set amqp-url for metering to work
+enable-metering = false
+
+# amqp-url = "amqp://guest:guest@rabbitmq:5672/"
+
+# drop-unauthorized is used when data are coming to gocky having a source
+# different than traefik (e.g. unauthorized)
+# if drop-unauthorized is true, then gocky will return forbidden error
+# if set to false, it will write data to graphite in the form of
+# Unauthorized_machineID.cpu.0.idle
+drop-unauthorized = false

@@ -13,8 +13,11 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/influxdata/influxdb/models"
+	"github.com/influxdata/telegraf"
+	"github.com/influxdata/telegraf/plugins/outputs/graphite"
 	cache "github.com/patrickmn/go-cache"
 	"github.com/streadway/amqp"
 )
@@ -33,7 +36,11 @@ type Beringei struct {
 	closing int64
 	l       net.Listener
 
-	backends []*beringeiBackend
+	backends        []*beringeiBackend
+	graphiteBackend string
+
+	beringeiEnabled bool
+	graphiteEnabled bool
 }
 
 var pointsCh chan *BeringeiPoint
@@ -53,6 +60,7 @@ func NewBeringei(cfg BeringeiConfig) (Relay, error) {
 
 	b.ampqURL = cfg.AMQPUrl
 	b.beringeiUpdateURL = cfg.BeringeiUpdateURL
+	b.graphiteBackend = cfg.GraphiteOutput
 
 	for i := range cfg.Outputs {
 		backend, err := NewBeringeiBackend(&cfg.Outputs[i])
@@ -61,6 +69,18 @@ func NewBeringei(cfg BeringeiConfig) (Relay, error) {
 		}
 
 		b.backends = append(b.backends, backend)
+	}
+
+	if len(b.backends) > 0 {
+		b.beringeiEnabled = true
+	} else {
+		b.beringeiEnabled = false
+	}
+
+	if b.graphiteBackend != "" {
+		b.graphiteEnabled = true
+	} else {
+		b.graphiteEnabled = false
 	}
 
 	return b, nil
@@ -111,8 +131,21 @@ func (b *Beringei) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	start := time.Now()
 
+	g := &graphite.Graphite{
+		Servers: []string{b.graphiteBackend},
+		Prefix:  "bucky",
+	}
+
+	if b.graphiteEnabled {
+		err := g.Connect()
+		if err != nil {
+			log.Fatalf("Could not connect to graphite: %s", err)
+		}
+	}
+
 	queryParams := r.URL.Query()
 
+	log.Println(r.Header)
 	// fail early if we cannot connect to Rabbitmq
 	conn, err := amqp.Dial(b.ampqURL)
 	if err != nil {
@@ -171,8 +204,10 @@ func (b *Beringei) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusBadRequest, "unable to parse points")
 		return
 	}
-
-	go pushPoints(points, b.ampqURL, b.beringeiUpdateURL)
+	// for _, p := range points {
+	// 	log.Print(p)
+	// }
+	go pushPoints(points, b.ampqURL, g, b.beringeiUpdateURL, b.beringeiEnabled, b.graphiteEnabled)
 
 }
 
@@ -197,45 +232,77 @@ func NewBeringeiBackend(cfg *BeringeiOutputConfig) (*beringeiBackend, error) {
 
 }
 
-func pushPoints(points []models.Point, amqpURL, beringeiUpdateURL string) {
+func pushPoints(points []models.Point, amqpURL string, g *graphite.Graphite, beringeiUpdateURL string, beringeiEnabled, graphiteEnabled bool) {
 	for _, p := range points {
 		tags := make(map[string]string)
 		for _, v := range p.Tags() {
 			tags[string(v.Key)] = string(v.Value)
 		}
 		parsedPoints := make([]string, 0, len(points))
+		graphiteMetrics := make([]telegraf.Metric, 0, len(points))
 		fi := p.FieldIterator()
 		for fi.Next() {
 			switch fi.Type() {
 			case models.Float:
 				v, _ := fi.FloatValue()
 				tmpPoint := NewBeringeiPoint(string(p.Name()), string(fi.FieldKey()), p.UnixNano(), tags, v)
-				tmpPoint.generateID(tmpPoint, p.Key())
-				pushToCache(tmpPoint, amqpURL)
-				if tmpPoint.ID != "" {
-					s := tmpPoint.ID + " " + strconv.FormatFloat(v, 'E', -1, 64) + " " + strconv.FormatInt(tmpPoint.Timestamp, 10)
-					parsedPoints = append(parsedPoints, s)
+				if graphiteEnabled {
+					if utf8.ValidString(string(fi.FieldKey())) {
+						grphPoint := GraphiteMetric(string(p.Name()), tags, p.UnixNano(), v, string(fi.FieldKey()))
+						if grphPoint != nil {
+							graphiteMetrics = append(graphiteMetrics, grphPoint)
+						}
+					}
+				}
+
+				if beringeiEnabled {
+					tmpPoint.generateID(tmpPoint, p.Key())
+					pushToCache(tmpPoint, amqpURL)
+					if tmpPoint.ID != "" {
+						s := tmpPoint.ID + " " + strconv.FormatFloat(v, 'E', -1, 64) + " " + strconv.FormatInt(tmpPoint.Timestamp, 10)
+						parsedPoints = append(parsedPoints, s)
+					}
 				}
 			case models.Integer:
 				v, _ := fi.IntegerValue()
 				tmpPoint := NewBeringeiPoint(string(p.Name()), string(fi.FieldKey()), p.UnixNano(), tags, v)
-				tmpPoint.generateID(tmpPoint, p.Key())
-				pushToCache(tmpPoint, amqpURL)
-				if tmpPoint.ID != "" {
-					s := tmpPoint.ID + " " + strconv.FormatInt(v, 10) + " " + strconv.FormatInt(tmpPoint.Timestamp, 10)
-					parsedPoints = append(parsedPoints, s)
+				if graphiteEnabled {
+					if utf8.ValidString(string(fi.FieldKey())) {
+						grphPoint := GraphiteMetric(string(p.Name()), tags, p.UnixNano(), v, string(fi.FieldKey()))
+						if grphPoint != nil {
+							graphiteMetrics = append(graphiteMetrics, grphPoint)
+						}
+					}
 				}
-			// case models.String:
-			// 	log.Println("String values not supported")
-			// case models.Boolean:
-			// 	log.Println("Boolean values not supported")
-			// case models.Empty:
-			// 	log.Println("Empry values not supported")
-			default:
-				log.Println("Unknown value type")
+
+				if beringeiEnabled {
+					tmpPoint.generateID(tmpPoint, p.Key())
+					pushToCache(tmpPoint, amqpURL)
+					if tmpPoint.ID != "" {
+						s := tmpPoint.ID + " " + strconv.FormatInt(v, 10) + " " + strconv.FormatInt(tmpPoint.Timestamp, 10)
+						parsedPoints = append(parsedPoints, s)
+					}
+				}
+				// case models.String:
+				// 	log.Println("String values not supported")
+				// case models.Boolean:
+				// 	log.Println("Boolean values not supported")
+				// case models.Empty:
+				// 	log.Println("Empry values not supported")
+				// default:
+				// 	log.Println("Unknown value type")
 			}
 		}
-		pushToBeringei(parsedPoints, beringeiUpdateURL)
+
+		if beringeiEnabled {
+			pushToBeringei(parsedPoints, beringeiUpdateURL)
+		}
+		if graphiteEnabled {
+			err := g.Write(graphiteMetrics)
+			if err != nil {
+				log.Println(err)
+			}
+		}
 	}
 
 }
@@ -256,11 +323,9 @@ func pushToBeringei(points []string, targetURL string) {
 
 func pushToCache(p *BeringeiPoint, amqpURL string) {
 	if _, found := RelayCache.Get(p.ID); found {
-		// log.Println("Found")
 		return
 	}
 
-	// log.Println("Not Found")
 	RelayCache.Set(p.ID, p.Value, cache.DefaultExpiration)
 	pushToRabbitmq(p, amqpURL)
 	return
