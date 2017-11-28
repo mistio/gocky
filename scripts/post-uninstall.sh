@@ -1,24 +1,24 @@
 #!/bin/bash
 
 function disable_systemd {
-    systemctl disable influxdb-relay
-    rm -f /lib/systemd/system/influxdb-relay.service
+    systemctl disable gocky
+    rm -f /lib/systemd/system/gocky.service
 }
 
 function disable_update_rcd {
-    update-rc.d -f influxdb-relay remove
-    rm -f /etc/init.d/influxdb-relay
+    update-rc.d -f gocky remove
+    rm -f /etc/init.d/gocky
 }
 
 function disable_chkconfig {
-    chkconfig --del influxdb-relay
-    rm -f /etc/init.d/influxdb-relay
+    chkconfig --del gocky
+    rm -f /etc/init.d/gocky
 }
 
 if [[ -f /etc/redhat-release ]]; then
     # RHEL-variant logic
     if [[ "$1" = "0" ]]; then
-	# Influxdb-Relay is no longer installed, remove from init system
+	# gocky is no longer installed, remove from init system
 	which systemctl &>/dev/null
 	if [[ $? -eq 0 ]]; then
 	    disable_systemd
@@ -44,7 +44,7 @@ elif [[ -f /etc/os-release ]]; then
     if [[ $ID = "amzn" ]]; then
 	# Amazon Linux logic
 	if [[ "$1" = "0" ]]; then
-	    # Influxdb-Relay is no longer installed, remove from init system
+	    # gocky is no longer installed, remove from init system
 	    disable_chkconfig
 	fi
     fi

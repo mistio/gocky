@@ -1,28 +1,28 @@
 #!/bin/bash
 ### BEGIN INIT INFO
-# Provides:          influxdb-relay
+# Provides:          gocky
 # Required-Start:    $all
 # Required-Stop:     $remote_fs $syslog
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
-# Short-Description: Start the InfluxDB-Relay process
+# Short-Description: Start the gocky process
 ### END INIT INFO
 
 # If you modify this, please make sure to also edit influxdb.service
 
-# Command-line options that can be set in /etc/default/influxdb-relay.
+# Command-line options that can be set in /etc/default/gocky.
 # These will override any config file values.
-DEFAULT=/etc/default/influxdb-relay
+DEFAULT=/etc/default/gocky
 
 # Daemon options
 DAEMON_OPTS=
 
 # Process name ( For display )
-NAME=influxdb-relay
+NAME=gocky
 
 # User and group
-USER=influxdb-relay
-GROUP=influxdb-relay
+USER=gocky
+GROUP=gocky
 
 # Check for sudo or root privileges before continuing
 if [ "$UID" != "0" ]; then
@@ -32,17 +32,17 @@ fi
 
 # Daemon name, where is the actual executable If the daemon is not
 # there, then exit.
-DAEMON=/usr/bin/influxdb-relay
+DAEMON=/usr/bin/gocky
 if [ ! -x $DAEMON ]; then
     echo "Executable $DAEMON does not exist!"
     exit 5
 fi
 
 # Configuration file
-CONFIG=/etc/influxdb-relay/influxdb-relay.conf
+CONFIG=/etc/gocky/gocky.conf
 
 # PID file for the daemon
-PIDFILE=/var/run/influxdb-relay/influxdb-relay.pid
+PIDFILE=/var/run/gocky/gocky.pid
 PIDDIR=`dirname $PIDFILE`
 if [ ! -d "$PIDDIR" ]; then
     mkdir -p $PIDDIR
@@ -58,7 +58,7 @@ fi
 
 # Logging
 if [ -z "$STDOUT" ]; then
-    STDOUT=/var/log/influxdb-relay/influxdb-relay.log
+    STDOUT=/var/log/gocky/gocky.log
 fi
 
 if [ ! -f "$STDOUT" ]; then
@@ -66,7 +66,7 @@ if [ ! -f "$STDOUT" ]; then
 fi
 
 if [ -z "$STDERR" ]; then
-    STDERR=/var/log/influxdb-relay/influxdb-relay.log
+    STDERR=/var/log/gocky/gocky.log
 fi
 
 if [ ! -f "$STDERR" ]; then
