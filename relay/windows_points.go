@@ -13,19 +13,19 @@ import (
 func GraphiteWindowsMetric(metricName string, tags map[string]string, timestamp int64, value interface{}, field string) telegraf.Metric {
 
 	var parsedMetric map[string]interface{}
-	// log.Println("Mpika edo")
 
 	switch metricName {
 	case "cpu":
 		parsedMetric, metricName = parseWindowsCPU(tags, field, metricName, value)
-		// log.Println(metricName)
-		// log.Println(parsedMetric)
 	case "disk":
-		parsedMetric = map[string]interface{}{tags["device"] + "." + field: value}
+		parsedMetric = map[string]interface{}{field: value}
+		metricName = "disk." + tags["device"]
 	case "diskio":
-		parsedMetric, metricName = parseDiskio(tags, field, metricName, value)
+		parsedMetric = map[string]interface{}{field: value}
+		metricName = "diskio." + tags["name"]
 	case "net":
-		parsedMetric, metricName = parseNet(tags, field, metricName, value)
+		parsedMetric = map[string]interface{}{field: value}
+		metricName = "net." + tags["interface"]
 	case "mem":
 		parsedMetric, metricName = parseMem(tags, field, metricName, value)
 	case "system":
@@ -78,7 +78,6 @@ func parseWindowsCPU(tags map[string]string, field, metricName string, value int
 	}
 	parsedMetric = map[string]interface{}{fieldFix: value}
 
-	log.Println(parsedMetric)
 	switch fieldFix {
 	case "idle",
 		"interrupt",
