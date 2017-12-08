@@ -1,7 +1,6 @@
 package relay
 
 import (
-	"log"
 	"regexp"
 	"time"
 
