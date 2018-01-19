@@ -95,7 +95,9 @@ func parseCPU(tags map[string]string, field, metricName string, value interface{
 
 	// for now we drop the total subdirectory
 	if cpuFix == "total" {
-		metricNameFixed = "cpu_extra"
+		metricNameFixed = "cpu_extra.total"
+	} else {
+		metricNameFixed += "." + cpuFix
 	}
 
 	r, _ = regexp.Compile(`usage_(.*[a-zA-Z0-9])`)
@@ -115,7 +117,7 @@ func parseCPU(tags map[string]string, field, metricName string, value interface{
 		fieldFix = "interrupt"
 
 	}
-	parsedMetric = map[string]interface{}{cpuFix + "." + fieldFix: value}
+	parsedMetric = map[string]interface{}{fieldFix: value}
 
 	switch fieldFix {
 	case "idle",
@@ -200,20 +202,26 @@ func parseNet(tags map[string]string, field, metricName string, value interface{
 
 	switch field {
 	case "bytes_recv":
-		fieldFix = "if_octets.rx"
+		metricNameFixed += "." + tags["interface"] + ".if_octets"
+		fieldFix = "rx"
 	case "bytes_sent":
-		fieldFix = "if_octets.tx"
+		metricNameFixed += "." + tags["interface"] + ".if_octets"
+		fieldFix = "tx"
 	case "packets_recv":
-		fieldFix = "if_packets.rx"
+		metricNameFixed += "." + tags["interface"] + ".if_packets"
+		fieldFix = "rx"
 	case "packets_sent":
-		fieldFix = "if_packets.tx"
+		metricNameFixed += "." + tags["interface"] + ".if_packets"
+		fieldFix = "tx"
 	case "err_in":
-		fieldFix = "if_errors.rx"
+		metricNameFixed += "." + tags["interface"] + ".if_errors"
+		fieldFix = "rx"
 	case "err_out":
-		fieldFix = "if_errors.tx"
+		metricNameFixed += "." + tags["interface"] + ".if_errors"
+		fieldFix = "tx"
 	}
 
-	parsedMetric = map[string]interface{}{tags["interface"] + "." + fieldFix: value}
+	parsedMetric = map[string]interface{}{fieldFix: value}
 
 	return parsedMetric, metricNameFixed
 }
