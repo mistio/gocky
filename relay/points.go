@@ -51,8 +51,8 @@ func GraphiteMetric(metricName string, tags map[string]string, timestamp int64, 
 	case "cpu":
 		parsedMetric, metricName = parseCPU(tags, field, metricName, value)
 	case "disk":
-		metricName = "df"
-		parsedMetric = map[string]interface{}{tags["device"] + ".df_complex." + field: value}
+		metricName = "df." + tags["device"] + ".df_complex"
+		parsedMetric = map[string]interface{}{field: value}
 	case "diskio":
 		parsedMetric, metricName = parseDiskio(tags, field, metricName, value)
 	case "net":
@@ -229,23 +229,27 @@ func parseNet(tags map[string]string, field, metricName string, value interface{
 
 func parseDiskio(tags map[string]string, field, metricName string, value interface{}) (parsedMetric map[string]interface{}, metricNameFixed string) {
 	// parsedMetric = map[string]interface{}{field: value}
-	metricNameFixed = "disk"
+	metricNameFixed = "disk." + tags["name"]
 	fieldFix := field
 
 	switch field {
 	case "write_time":
-		fieldFix = "disk_time.write"
+		metricNameFixed += ".disk_time"
+		fieldFix = "write"
 	case "read_time":
-		fieldFix = "disk_time.read"
+		metricNameFixed += ".disk_time"
+		fieldFix = "read"
 	case "write_bytes":
-		fieldFix = "disk_octets.write"
+		metricNameFixed += ".disk_octets"
+		fieldFix = "write"
 	case "read_bytes":
-		fieldFix = "disk_octets.read"
+		metricNameFixed += ".disk_octets"
+		fieldFix = "read"
 	default:
-		metricNameFixed = "disk_extra"
+		metricNameFixed = "disk_extra." + tags["name"]
 	}
 
-	parsedMetric = map[string]interface{}{tags["name"] + "." + fieldFix: value}
+	parsedMetric = map[string]interface{}{fieldFix: value}
 
 	return parsedMetric, metricNameFixed
 }
