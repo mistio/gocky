@@ -51,7 +51,8 @@ func GraphiteMetric(metricName string, tags map[string]string, timestamp int64, 
 	case "cpu":
 		parsedMetric, metricName = parseCPU(tags, field, metricName, value)
 	case "disk":
-		parsedMetric = map[string]interface{}{tags["device"] + "." + field: value}
+		metricName = "df"
+		parsedMetric = map[string]interface{}{tags["device"] + ".df_complex." + field: value}
 	case "diskio":
 		parsedMetric, metricName = parseDiskio(tags, field, metricName, value)
 	case "net":
