@@ -8,6 +8,6 @@ WORKDIR /go/src/github.com/mistio/gocky
 
 RUN go get
 
-RUN go-wrapper install
+RUN go build
 
-CMD ["go-wrapper", "run"] # ["app"]
+ENTRYPOINT ["/go/src/github.com/mistio/gocky/gocky"] 

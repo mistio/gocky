@@ -51,7 +51,8 @@ func GraphiteMetric(metricName string, tags map[string]string, timestamp int64, 
 	case "cpu":
 		parsedMetric, metricName = parseCPU(tags, field, metricName, value)
 	case "disk":
-		parsedMetric = map[string]interface{}{tags["device"] + "." + field: value}
+		metricName = "df." + tags["device"] + ".df_complex"
+		parsedMetric = map[string]interface{}{field: value}
 	case "diskio":
 		parsedMetric, metricName = parseDiskio(tags, field, metricName, value)
 	case "net":
@@ -83,15 +84,21 @@ func GraphiteMetric(metricName string, tags map[string]string, timestamp int64, 
 func parseCPU(tags map[string]string, field, metricName string, value interface{}) (parsedMetric map[string]interface{}, metricNameFixed string) {
 
 	metricNameFixed = "cpu"
-
+	cpuFix := ""
 	// convert cpu0, cpu1, cpu-total -> 0, 1, total
 	r, _ := regexp.Compile(`.*[cpu-](.*[a-zA-Z0-9])`)
 	match := r.FindStringSubmatch(tags["cpu"])
-	cpuFix := match[len(match)-1]
+	if len(match) > 1 {
+		cpuFix = match[len(match)-1]
+	} else {
+		return nil, ""
+	}
 
 	// for now we drop the total subdirectory
 	if cpuFix == "total" {
-		metricNameFixed = "cpu_extra"
+		metricNameFixed = "cpu_extra.total"
+	} else {
+		metricNameFixed += "." + cpuFix
 	}
 
 	r, _ = regexp.Compile(`usage_(.*[a-zA-Z0-9])`)
@@ -111,7 +118,7 @@ func parseCPU(tags map[string]string, field, metricName string, value interface{
 		fieldFix = "interrupt"
 
 	}
-	parsedMetric = map[string]interface{}{cpuFix + "." + fieldFix: value}
+	parsedMetric = map[string]interface{}{fieldFix: value}
 
 	switch fieldFix {
 	case "idle",
@@ -196,43 +203,53 @@ func parseNet(tags map[string]string, field, metricName string, value interface{
 
 	switch field {
 	case "bytes_recv":
-		fieldFix = "if_octets.rx"
+		metricNameFixed += "." + tags["interface"] + ".if_octets"
+		fieldFix = "rx"
 	case "bytes_sent":
-		fieldFix = "if_octets.tx"
+		metricNameFixed += "." + tags["interface"] + ".if_octets"
+		fieldFix = "tx"
 	case "packets_recv":
-		fieldFix = "if_packets.rx"
+		metricNameFixed += "." + tags["interface"] + ".if_packets"
+		fieldFix = "rx"
 	case "packets_sent":
-		fieldFix = "if_packets.tx"
+		metricNameFixed += "." + tags["interface"] + ".if_packets"
+		fieldFix = "tx"
 	case "err_in":
-		fieldFix = "if_errors.rx"
+		metricNameFixed += "." + tags["interface"] + ".if_errors"
+		fieldFix = "rx"
 	case "err_out":
-		fieldFix = "if_errors.tx"
+		metricNameFixed += "." + tags["interface"] + ".if_errors"
+		fieldFix = "tx"
 	}
 
-	parsedMetric = map[string]interface{}{tags["interface"] + "." + fieldFix: value}
+	parsedMetric = map[string]interface{}{fieldFix: value}
 
 	return parsedMetric, metricNameFixed
 }
 
 func parseDiskio(tags map[string]string, field, metricName string, value interface{}) (parsedMetric map[string]interface{}, metricNameFixed string) {
 	// parsedMetric = map[string]interface{}{field: value}
-	metricNameFixed = "disk"
+	metricNameFixed = "disk." + tags["name"]
 	fieldFix := field
 
 	switch field {
 	case "write_time":
-		fieldFix = "disk_time.write"
+		metricNameFixed += ".disk_time"
+		fieldFix = "write"
 	case "read_time":
-		fieldFix = "disk_time.read"
+		metricNameFixed += ".disk_time"
+		fieldFix = "read"
 	case "write_bytes":
-		fieldFix = "disk_octets.write"
+		metricNameFixed += ".disk_octets"
+		fieldFix = "write"
 	case "read_bytes":
-		fieldFix = "disk_octets.read"
+		metricNameFixed += ".disk_octets"
+		fieldFix = "read"
 	default:
-		metricNameFixed = "disk_extra"
+		metricNameFixed = "disk_extra." + tags["name"]
 	}
 
-	parsedMetric = map[string]interface{}{tags["name"] + "." + fieldFix: value}
+	parsedMetric = map[string]interface{}{fieldFix: value}
 
 	return parsedMetric, metricNameFixed
 }

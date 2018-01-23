@@ -214,7 +214,13 @@ func (g *GraphiteRelay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	go pushToGraphite(points, graphiteClient, machineID)
+	sourceType := "unix"
+
+	if r.Header["X-Gocky-Tag-Source-Type"][0] == "windows" {
+		sourceType = "windows"
+	}
+
+	go pushToGraphite(points, graphiteClient, machineID, sourceType)
 
 	if g.enableMetering {
 		orgID := "Unauthorized"
@@ -233,7 +239,7 @@ func (g *GraphiteRelay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(204)
 }
 
-func pushToGraphite(points []models.Point, g *graphite.Graphite, machineID string) {
+func pushToGraphite(points []models.Point, g *graphite.Graphite, machineID, sourceType string) {
 	for _, p := range points {
 		tags := make(map[string]string)
 		for _, v := range p.Tags() {
@@ -250,17 +256,33 @@ func pushToGraphite(points []models.Point, g *graphite.Graphite, machineID strin
 			case models.Float:
 				v, _ := fi.FloatValue()
 				if utf8.ValidString(string(fi.FieldKey())) {
-					grphPoint := GraphiteMetric(string(p.Name()), tags, p.UnixNano(), v, string(fi.FieldKey()))
-					if grphPoint != nil {
-						graphiteMetrics = append(graphiteMetrics, grphPoint)
+					switch sourceType {
+					case "windows":
+						grphPoint := GraphiteWindowsMetric(string(p.Name()), tags, p.UnixNano(), v, string(fi.FieldKey()))
+						if grphPoint != nil {
+							graphiteMetrics = append(graphiteMetrics, grphPoint)
+						}
+					default:
+						grphPoint := GraphiteMetric(string(p.Name()), tags, p.UnixNano(), v, string(fi.FieldKey()))
+						if grphPoint != nil {
+							graphiteMetrics = append(graphiteMetrics, grphPoint)
+						}
 					}
 				}
 			case models.Integer:
 				v, _ := fi.IntegerValue()
 				if utf8.ValidString(string(fi.FieldKey())) {
-					grphPoint := GraphiteMetric(string(p.Name()), tags, p.UnixNano(), v, string(fi.FieldKey()))
-					if grphPoint != nil {
-						graphiteMetrics = append(graphiteMetrics, grphPoint)
+					switch sourceType {
+					case "windows":
+						grphPoint := GraphiteWindowsMetric(string(p.Name()), tags, p.UnixNano(), v, string(fi.FieldKey()))
+						if grphPoint != nil {
+							graphiteMetrics = append(graphiteMetrics, grphPoint)
+						}
+					default:
+						grphPoint := GraphiteMetric(string(p.Name()), tags, p.UnixNano(), v, string(fi.FieldKey()))
+						if grphPoint != nil {
+							graphiteMetrics = append(graphiteMetrics, grphPoint)
+						}
 					}
 				}
 				// case models.String:
