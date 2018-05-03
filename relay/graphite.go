@@ -4,7 +4,6 @@ import (
 	"compress/gzip"
 	"crypto/tls"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"net/http"
@@ -16,11 +15,12 @@ import (
 	"github.com/influxdata/influxdb/models"
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/outputs/graphite"
+	"github.com/robfig/cron"
 )
 
 // Metering Read-Write mutex
 var mu = &sync.RWMutex{}
-var metering = make(map[string]map[string]int)
+var metering = make(map[string]int)
 
 // GraphiteRelay is a relay for graphite backends
 type GraphiteRelay struct {
@@ -38,6 +38,9 @@ type GraphiteRelay struct {
 
 	dropUnauthorized bool
 
+	cronJob      *cron.Cron
+	cronSchedule string
+
 	backends []*graphiteBackend
 }
 
@@ -51,6 +54,12 @@ func (g *GraphiteRelay) Name() string {
 
 func (g *GraphiteRelay) Run() error {
 	l, err := net.Listen("tcp", g.addr)
+
+	if g.cronSchedule != "" {
+		g.cronJob.AddFunc(g.cronSchedule, pushToAmqp)
+		g.cronJob.Start()
+	}
+
 	if err != nil {
 		return err
 	}
@@ -79,6 +88,9 @@ func (g *GraphiteRelay) Run() error {
 
 func (g *GraphiteRelay) Stop() error {
 	atomic.StoreInt64(&g.closing, 1)
+	if g.cronSchedule != "" {
+		g.cronJob.Stop()
+	}
 	return g.l.Close()
 
 }
@@ -115,6 +127,12 @@ func NewGraphiteRelay(cfg GraphiteConfig) (Relay, error) {
 	// }
 
 	g.dropUnauthorized = cfg.DropUnauthorized
+
+	g.cronSchedule = cfg.CronSchedule
+
+	if g.cronSchedule != "" {
+		g.cronJob = cron.New()
+	}
 
 	return g, nil
 }
@@ -158,19 +176,19 @@ func (g *GraphiteRelay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	queryParams := r.URL.Query()
 
-	if r.URL.Path == "/metrics" {
-		resp := ""
-		t := time.Now().UnixNano()
-		mu.RLock()
-		for orgID, machineMap := range metering {
-			for machineID, samples := range machineMap {
-				resp += fmt.Sprintf("gocky_samples_total{relay=graphite,orgID=%s,machineID=%s} %d %d\n", orgID, machineID, samples, t)
-			}
-		}
-		mu.RUnlock()
-		io.WriteString(w, resp)
-		return
-	}
+	// if r.URL.Path == "/metrics" {
+	// 	resp := ""
+	// 	t := time.Now().UnixNano()
+	// 	mu.RLock()
+	// 	for orgID, machineMap := range metering {
+	// 		for machineID, samples := range machineMap {
+	// 			resp += fmt.Sprintf("gocky_samples_total{relay=graphite,orgID=%s,machineID=%s} %d %d\n", orgID, machineID, samples, t)
+	// 		}
+	// 	}
+	// 	mu.RUnlock()
+	// 	io.WriteString(w, resp)
+	// 	return
+	// }
 
 	if r.URL.Path != "/write" {
 		jsonError(w, 204, "Dummy response for db creation")
@@ -229,9 +247,9 @@ func (g *GraphiteRelay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		mu.Lock()
-		prevCounter := metering[orgID][machineID]
-		// metering[orgID][machineID] += len(points)
-		metering[orgID] = map[string]int{machineID: prevCounter + len(points)}
+		// prevCounter := metering[orgID]
+		metering[orgID] += len(points)
+		// metering[orgID] = map[string]int{machineID: prevCounter + len(points)}
 		mu.Unlock()
 	}
 
