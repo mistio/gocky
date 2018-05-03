@@ -20,7 +20,8 @@ import (
 
 // Metering Read-Write mutex
 var mu = &sync.RWMutex{}
-var metering = make(map[string]int)
+var metering = make(map[string]map[string]int)
+var amqpURL string
 
 // GraphiteRelay is a relay for graphite backends
 type GraphiteRelay struct {
@@ -119,12 +120,13 @@ func NewGraphiteRelay(cfg GraphiteConfig) (Relay, error) {
 
 	g.enableMetering = cfg.EnableMetering
 	g.ampqURL = cfg.AMQPUrl
+	amqpURL = cfg.AMQPUrl
 
-	// if g.enableMetering && g.ampqURL == "" {
-	// 	g.enableMetering = false
-	// 	log.Println("You have to set AMQPUrl in config for metering to work")
-	// 	log.Println("Disabling metering for now")
-	// }
+	if g.enableMetering && g.ampqURL == "" {
+		g.enableMetering = false
+		log.Println("You have to set AMQPUrl in config for metering to work")
+		log.Println("Disabling metering for now")
+	}
 
 	g.dropUnauthorized = cfg.DropUnauthorized
 
@@ -245,11 +247,25 @@ func (g *GraphiteRelay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if r.Header["X-Gocky-Tag-Org-Id"] != nil {
 			orgID = r.Header["X-Gocky-Tag-Org-Id"][0]
 		}
+		machineID := ""
+		if r.Header["X-Gocky-Tag-Machine-Id"] != nil {
+			machineID = r.Header["X-Gocky-Tag-Machine-Id"][0]
+		}
 
 		mu.Lock()
-		// prevCounter := metering[orgID]
-		metering[orgID] += len(points)
-		// metering[orgID] = map[string]int{machineID: prevCounter + len(points)}
+
+		_, orgExists := metering[orgID]
+		if !orgExists {
+			metering[orgID] = make(map[string]int)
+		}
+
+		_, machExists := metering[orgID][machineID]
+		if !machExists {
+			metering[orgID][machineID] = len(points)
+		} else {
+			metering[orgID][machineID] += len(points)
+		}
+
 		mu.Unlock()
 	}
 
