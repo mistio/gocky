@@ -15,10 +15,10 @@ func pushToAmqp() {
   defer conn.Close()
 
   ch, err := conn.Channel()
-	if err != nil {
+  if err != nil {
     log.Fatalln(err)
   }
-	defer ch.Close()
+  defer ch.Close()
 
   body, err := json.Marshal(metering)
   if err != nil {
