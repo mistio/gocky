@@ -40,7 +40,20 @@ output = [
 # you have to also set amqp-url for metering to work
 enable-metering = false
 
-# amqp-url = "amqp://guest:guest@rabbitmq:5672/"
+# Metering
+# You have to set both amqp-url and cron-schedule to periodically
+# push metrics to rabbitmq
+
+amqp-url = "amqp://guest:guest@rabbitmq:5672/"
+
+# cron-schedule could be in different formats
+# For example:
+# cron-schedule = "@every 5s"
+# cron-schedule = "@every 1m"
+# cron-schedule = "@hourly"
+# cron-schedule = "0 30 * * * *"
+cron-schedule = "@every 10s"
+
 
 # drop-unauthorized is used when data are coming to gocky having a source
 # different than traefik (e.g. unauthorized)

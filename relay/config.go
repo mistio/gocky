@@ -134,7 +134,8 @@ type GraphiteConfig struct {
 	// If set to false, it will create an "Unknown" directory in graphite
 	DropUnauthorized bool `toml:"drop-unauthorized"`
 
-	// A list of graphite backend servers
+	CronSchedule string `toml:"cron-schedule"`
+	// A list of gCronJobTimeraphite backend servers
 	Outputs []GraphiteOutputConfig `toml:"output"`
 }
 
