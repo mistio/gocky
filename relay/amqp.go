@@ -7,6 +7,22 @@ import (
   "github.com/streadway/amqp"
 )
 
+type M map[string]interface{}
+
+func flattenMeteringData(meteringData map[string]map[string]int) []map[string]interface{} {
+
+  meteringArray := make([]map[string]interface{}, 0)
+
+  for orgId, values := range meteringData {
+    for machineId, counter := range values {
+      m := M{"owner": orgId, "machine": machineId, "counter": counter}
+      meteringArray = append(meteringArray, m)
+    }
+  }
+
+  return meteringArray
+}
+
 func pushToAmqp() {
   conn, err := amqp.Dial(amqpURL)
   if err != nil {
@@ -20,7 +36,7 @@ func pushToAmqp() {
   }
   defer ch.Close()
 
-  body, err := json.Marshal(metering)
+  body, err := json.Marshal(flattenMeteringData(metering))
   if err != nil {
     return
   }
