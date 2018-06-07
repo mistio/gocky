@@ -13,6 +13,8 @@ func flattenMeteringData(meteringData map[string]map[string]int) []map[string]in
 
   meteringArray := make([]map[string]interface{}, 0)
 
+  mu.RLock()
+  defer mu.RUnlock()
   for orgId, values := range meteringData {
     for machineId, counter := range values {
       m := M{"owner": orgId, "machine": machineId, "counter": counter}
