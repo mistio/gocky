@@ -15,6 +15,7 @@ func flattenMeteringData(meteringData map[string]map[string]int) []map[string]in
 
   mu.RLock()
   defer mu.RUnlock()
+
   for orgId, values := range meteringData {
     for machineId, counter := range values {
       m := M{"owner": orgId, "machine": machineId, "counter": counter}
@@ -65,6 +66,14 @@ func pushToAmqp() {
   if err != nil {
     log.Println("Error while publishing:")
     log.Println(err)
+  } else {
+      mu.Lock()
+
+      for k := range metering {
+        delete(metering, k)
+      }
+
+      mu.Unlock()
   }
 
 }
