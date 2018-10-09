@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/influxdata/influxdb/models"
+	"github.com/robfig/cron"
 )
 
 // HTTP is a relay for HTTP influxdb writes
@@ -30,6 +31,14 @@ type HTTP struct {
 
 	closing int64
 	l       net.Listener
+
+	enableMetering bool
+	ampqURL        string
+
+	dropUnauthorized bool
+
+	cronJob      *cron.Cron
+	cronSchedule string
 
 	backends []*httpBackend
 }
@@ -66,6 +75,24 @@ func NewHTTP(cfg HTTPConfig) (Relay, error) {
 		h.backends = append(h.backends, backend)
 	}
 
+	h.enableMetering = cfg.EnableMetering
+	h.ampqURL = cfg.AMQPUrl
+	amqpURL = cfg.AMQPUrl
+
+	if h.enableMetering && h.ampqURL == "" {
+		h.enableMetering = false
+		log.Println("You have to set AMQPUrl in config for metering to work")
+		log.Println("Disabling metering for now")
+	}
+
+	h.dropUnauthorized = cfg.DropUnauthorized
+
+	h.cronSchedule = cfg.CronSchedule
+
+	if h.cronSchedule != "" {
+		h.cronJob = cron.New()
+	}
+
 	return h, nil
 }
 
@@ -78,6 +105,12 @@ func (h *HTTP) Name() string {
 
 func (h *HTTP) Run() error {
 	l, err := net.Listen("tcp", h.addr)
+
+	if h.cronSchedule != "" {
+		h.cronJob.AddFunc(h.cronSchedule, pushToAmqp)
+		h.cronJob.Start()
+	}
+
 	if err != nil {
 		return err
 	}
@@ -107,6 +140,9 @@ func (h *HTTP) Run() error {
 
 func (h *HTTP) Stop() error {
 	atomic.StoreInt64(&h.closing, 1)
+	if h.cronSchedule != "" {
+		h.cronJob.Stop()
+	}
 	return h.l.Close()
 }
 
@@ -190,6 +226,33 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		putBuf(outBuf)
 		jsonError(w, http.StatusInternalServerError, "problem writing points")
 		return
+	}
+
+	if h.enableMetering {
+		orgID := "Unauthorized"
+		if r.Header["X-Gocky-Tag-Org-Id"] != nil {
+			orgID = r.Header["X-Gocky-Tag-Org-Id"][0]
+		}
+		machineID := ""
+		if r.Header["X-Gocky-Tag-Machine-Id"] != nil {
+			machineID = r.Header["X-Gocky-Tag-Machine-Id"][0]
+		}
+
+		mu.Lock()
+
+		_, orgExists := metering[orgID]
+		if !orgExists {
+			metering[orgID] = make(map[string]int)
+		}
+
+		_, machExists := metering[orgID][machineID]
+		if !machExists {
+			metering[orgID][machineID] = len(points)
+		} else {
+			metering[orgID][machineID] += len(points)
+		}
+
+		mu.Unlock()
 	}
 
 	// normalize query string
