@@ -40,6 +40,7 @@ type TimescaleRelay struct {
 }
 
 type TimescaleBackend struct {
+	name string
 	connect_parameters string
 	db *sql.DB
 }
@@ -84,6 +85,12 @@ func (tr *TimescaleRelay) Run() error {
 			return err
 		}
 		backend.db = db
+		err = backend.db.Ping()
+		if err != nil {
+			log.Printf("Backend %s doesn't respond", backend.name)
+			return err
+		}
+		log.Printf("Backend %s is up", backend.name) 
 	}
 
 	log.Printf("Starting Timescale relay %q on %v", tr.Name(), tr.addr)
@@ -149,9 +156,10 @@ func NewTimescaleBackend(cfg *TimescaleOutputConfig) (*TimescaleBackend, error) 
 	if cfg.Name == "" {
 		cfg.Name = cfg.Location
 	}
-	connStr := "host=timescaledb dbname=tutorial user=root password=example"
+	connStr := "host=timescaledb dbname=tutorial user=root password=example sslmode=disable"
 
 	return &TimescaleBackend{
+		name: cfg.Name,
 		connect_parameters: connStr,
 		db:	nil,
 	}, nil
@@ -194,7 +202,7 @@ func (tr *TimescaleRelay) ServeHTTP(resp http.ResponseWriter, req *http.Request)
 	}
 
 	// handle data points
-	go logPoints(points)
+	go makeQuery(points, tr.backends)
 
 	//update metering data
 	if tr.enableMetering {
@@ -275,15 +283,30 @@ func jsonFromFields(point models.Point) string {
 	return string(buffer)
 }
 
-func logPoints(points []models.Point) {
+func makeQuery(points []models.Point, backends []*TimescaleBackend) {
+	buffer := []byte("INSERT INTO metrics VALUES ")
+	// Each point is a timescaledb record
 	for _, p := range points {
-		// Prints Name of Point
-		log.Printf("Point Name: %v, time:%v",string(p.Name()),p.Time())
-		// Prints Tags in json format
-		log.Printf("Tags: %s",jsonFromTags(p))
-		// Prints All fields
-		log.Printf("Fields: %s",jsonFromFields(p))
-
+		time := fmt.Sprintf("%v", p.Time())
+		buffer = append(buffer, "(to_timestamp('"...)
+		buffer = append(buffer, time...)
+		buffer = append(buffer, "','YYYY-MM-DD HH24:MI:SS'),'"...)
+		buffer = append(buffer, string(p.Name())...)
+		buffer = append(buffer, "','"...)
+		buffer = append(buffer, jsonFromTags(p)...)
+		buffer = append(buffer, "','"...)
+		buffer = append(buffer, jsonFromFields(p)...)
+		buffer = append(buffer, "'),"...)
 	}
+	buffer[len(buffer)-1] = ';'
+	// log.Printf("%v",string(buffer))
+	insert_query := string(buffer)
 
+	for _, backend := range backends {
+		_, err := backend.db.Query(insert_query)
+		if err != nil {
+			log.Printf("Insertion failed at %v, query %v:", backend.name, insert_query)
+			log.Printf("Cause of: %v", err)
+		}
+	}
 }
