@@ -41,7 +41,7 @@ type TimescaleRelay struct {
 
 type TimescaleBackend struct {
 	name string
-	connect_parameters string
+	table string
 	db *sql.DB
 }
 
@@ -78,19 +78,14 @@ func (tr *TimescaleRelay) Run() error {
 	}
 	tr.l = l
 
-	//connect to db backends
+	//check db connections 
 	for _, backend := range tr.backends {
-		db, err := sql.Open("postgres", backend.connect_parameters)
-		if err != nil {
-			return err
-		}
-		backend.db = db
 		err = backend.db.Ping()
 		if err != nil {
-			log.Printf("Backend %s doesn't respond", backend.name)
-			return err
+			log.Printf("Backend %s ping failed, error: %v", backend.name, err)
+			// return err
 		}
-		log.Printf("Backend %s is up", backend.name) 
+		log.Printf("Backend %s ping succeded", backend.name) 
 	}
 
 	log.Printf("Starting Timescale relay %q on %v", tr.Name(), tr.addr)
@@ -153,21 +148,21 @@ func NewTimescaleRelay(cfg TimescaleConfig) (Relay, error) {
 
 // NewTimescaleBackend Initializes a new Timescale Backend
 func NewTimescaleBackend(cfg *TimescaleOutputConfig) (*TimescaleBackend, error) {
-	if cfg.Name == "" {
-		cfg.Name = cfg.Location
+
+	db, err := sql.Open("postgres", cfg.ConnString)
+	if err != nil {
+		return nil, err
 	}
-	connStr := "host=timescaledb dbname=tutorial user=root password=example sslmode=disable"
 
 	return &TimescaleBackend{
 		name: cfg.Name,
-		connect_parameters: connStr,
-		db:	nil,
+		table: cfg.Table,
+		db:	db,
 	}, nil
 }
 
 func (tr *TimescaleRelay) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 	start := time.Now()
-	log.Println("Request Arrived")
 	queryParams := req.URL.Query()
 
 	if req.URL.Path != "/write" {
@@ -247,6 +242,9 @@ func jsonFromTags(point models.Point) string {
 		buffer = append(buffer, v.Value...)
 		buffer = append(buffer, "\", "...)
 	}
+	if len(buffer) <= 2 {
+		return "{}"
+	}
 	buffer[len(buffer)-2] = '}'
 	return string(buffer)
 }
@@ -279,17 +277,23 @@ func jsonFromFields(point models.Point) string {
 		}
 		buffer = append(buffer, "\", "...)
 	}
+	if len(buffer) <= 2 {
+		return "{}"
+	}
 	buffer[len(buffer)-2] = '}'
 	return string(buffer)
 }
 
+// Transforms data points into a single sql insert query, executes it for every back end
 func makeQuery(points []models.Point, backends []*TimescaleBackend) {
-	buffer := []byte("INSERT INTO metrics VALUES ")
+	buffer := []byte("INSERT INTO %s VALUES ")
 	// Each point is a timescaledb record
 	for _, p := range points {
 		time := fmt.Sprintf("%v", p.Time())
+		// Transform time string into postgres timestamp during insertion
 		buffer = append(buffer, "(to_timestamp('"...)
 		buffer = append(buffer, time...)
+		// This directive cannot handle timezone info
 		buffer = append(buffer, "','YYYY-MM-DD HH24:MI:SS'),'"...)
 		buffer = append(buffer, string(p.Name())...)
 		buffer = append(buffer, "','"...)
@@ -299,11 +303,12 @@ func makeQuery(points []models.Point, backends []*TimescaleBackend) {
 		buffer = append(buffer, "'),"...)
 	}
 	buffer[len(buffer)-1] = ';'
-	// log.Printf("%v",string(buffer))
+	
 	insert_query := string(buffer)
 
 	for _, backend := range backends {
-		_, err := backend.db.Query(insert_query)
+		// Each backend could have different table name for metrics data
+		_, err := backend.db.Query(fmt.Sprintf(insert_query, backend.table))
 		if err != nil {
 			log.Printf("Insertion failed at %v, query %v:", backend.name, insert_query)
 			log.Printf("Cause of: %v", err)

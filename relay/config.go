@@ -189,8 +189,13 @@ type TimescaleOutputConfig struct {
 	// Name identifies the timescale backend
 	Name string `toml:"name"`
 
-	// Location should be set to the host:port of the backend server
-	Location string `toml:"location"`
+	// Connection String contains info about database server
+	// Example "host=timescale user=root"
+	// More options https://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-CONNSTRING
+	ConnString string `toml:"connstr"`
+
+	// Table is the hypertable name we use to store metrics in timescaledb
+	Table string `toml:"table"`
 }
 
 // LoadConfigFile parses the specified file into a Config object
