@@ -3,18 +3,18 @@ package relay
 import (
 	"compress/gzip"
 	"crypto/tls"
+	"database/sql"
 	"fmt"
-	"strconv"
 	"log"
 	"net"
 	"net/http"
+	"strconv"
 	"sync/atomic"
 	"time"
-	"database/sql"
 
 	"github.com/influxdata/influxdb/models"
+	_ "github.com/lib/pq"
 	"github.com/robfig/cron"
-	_"github.com/lib/pq"
 )
 
 // TimescaleRelay is a relay for timescaledb backends
@@ -40,9 +40,9 @@ type TimescaleRelay struct {
 }
 
 type TimescaleBackend struct {
-	name string
+	name  string
 	table string
-	db *sql.DB
+	db    *sql.DB
 }
 
 func (tr *TimescaleRelay) Name() string {
@@ -78,14 +78,14 @@ func (tr *TimescaleRelay) Run() error {
 	}
 	tr.l = l
 
-	//check db connections 
+	//check db connections
 	for _, backend := range tr.backends {
 		err = backend.db.Ping()
 		if err != nil {
 			log.Printf("Backend %s ping failed, error: %v", backend.name, err)
 			// return err
 		}
-		log.Printf("Backend %s ping succeded", backend.name) 
+		log.Printf("Backend %s ping succeded", backend.name)
 	}
 
 	log.Printf("Starting Timescale relay %q on %v", tr.Name(), tr.addr)
@@ -155,9 +155,9 @@ func NewTimescaleBackend(cfg *TimescaleOutputConfig) (*TimescaleBackend, error) 
 	}
 
 	return &TimescaleBackend{
-		name: cfg.Name,
+		name:  cfg.Name,
 		table: cfg.Table,
-		db:	db,
+		db:    db,
 	}, nil
 }
 
@@ -235,7 +235,7 @@ func jsonFromTags(point models.Point) string {
 	buffer := []byte("{")
 
 	// insert key-value pairs in buffer
-	for _, v := range point.Tags() { 
+	for _, v := range point.Tags() {
 		buffer = append(buffer, '"')
 		buffer = append(buffer, v.Key...)
 		buffer = append(buffer, "\": \""...)
@@ -260,13 +260,13 @@ func jsonFromFields(point models.Point) string {
 		switch fi.Type() {
 		case models.Float:
 			val, _ := fi.FloatValue()
-			buffer = append(buffer, strconv.FormatFloat(val,'f',-1,64)...)
+			buffer = append(buffer, strconv.FormatFloat(val, 'f', -1, 64)...)
 		case models.Integer:
 			val, _ := fi.IntegerValue()
-			buffer = append(buffer, strconv.FormatInt(val,10)...)
+			buffer = append(buffer, strconv.FormatInt(val, 10)...)
 		case models.Unsigned:
 			val, _ := fi.UnsignedValue()
-			buffer = append(buffer, strconv.FormatUint(val,10)...)
+			buffer = append(buffer, strconv.FormatUint(val, 10)...)
 		case models.Boolean:
 			val, _ := fi.BooleanValue()
 			buffer = append(buffer, strconv.FormatBool(val)...)
@@ -289,7 +289,7 @@ func makeQuery(points []models.Point, backends []*TimescaleBackend) {
 	buffer := []byte("INSERT INTO %s VALUES ")
 	// Each point is a timescaledb record
 	for _, p := range points {
-		time := fmt.Sprintf("%v", p.Time())
+		time := fmt.Sprintf("%v", p.Time().UTC())
 		// Transform time string into postgres timestamp during insertion
 		buffer = append(buffer, "(to_timestamp('"...)
 		buffer = append(buffer, time...)
@@ -303,7 +303,7 @@ func makeQuery(points []models.Point, backends []*TimescaleBackend) {
 		buffer = append(buffer, "'),"...)
 	}
 	buffer[len(buffer)-1] = ';'
-	
+
 	insert_query := string(buffer)
 
 	for _, backend := range backends {
