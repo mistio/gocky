@@ -2,8 +2,6 @@ FROM golang:1.10-alpine
 
 RUN apk add --update --no-cache git
 
-COPY . /go/src/github.com/mistio/gocky
-
 RUN mkdir -p /go/src/github.com/influxdata
 
 WORKDIR /go/src/github.com/influxdata
@@ -13,6 +11,8 @@ RUN git clone https://github.com/influxdata/influxdb
 WORKDIR /go/src/github.com/influxdata/influxdb
 
 RUN git checkout v1.7.7
+
+COPY . /go/src/github.com/mistio/gocky
 
 WORKDIR /go/src/github.com/mistio/gocky
 
