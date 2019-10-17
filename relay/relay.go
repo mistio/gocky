@@ -58,6 +58,18 @@ func New(config Config) (*Service, error) {
 		s.relays[g.Name()] = g
 
 	}
+
+	for _, cfg := range config.FdbRelays {
+		f, err := NewFdbRelay(cfg)
+		if err != nil {
+			return nil, err
+		}
+		if s.relays[f.Name()] != nil {
+			return nil, fmt.Errorf("duplicate relay: %q", f.Name())
+		}
+		s.relays[f.Name()] = f
+
+	}
 	return s, nil
 }
 

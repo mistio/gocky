@@ -1,8 +1,12 @@
-FROM golang:1.10-alpine
+FROM golang:1.13-buster
 
-RUN apk add --update --no-cache git
+RUN apt update && apt install -y build-essential && \
+    wget https://www.foundationdb.org/downloads/6.1.12/ubuntu/installers/foundationdb-clients_6.1.12-1_amd64.deb && \
+    dpkg -i foundationdb-clients_6.1.12-1_amd64.deb && \
+    rm foundationdb-clients_6.1.12-1_amd64.deb && \
+    rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /go/src/github.com/influxdata
+RUN mkdir -p /go/src/github.com/influxdata /go/src/github.com/apple
 
 WORKDIR /go/src/github.com/influxdata
 
@@ -11,6 +15,14 @@ RUN git clone https://github.com/influxdata/influxdb
 WORKDIR /go/src/github.com/influxdata/influxdb
 
 RUN git checkout v1.7.7
+
+WORKDIR /go/src/github.com/apple
+
+RUN git clone https://github.com/apple/foundationdb
+
+WORKDIR /go/src/github.com/apple/foundationdb
+
+RUN git checkout 6.1.12
 
 COPY . /go/src/github.com/mistio/gocky
 
