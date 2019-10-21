@@ -182,6 +182,38 @@ func NewLineInfo() (*LineInfo, error) {
 	return l, nil
 }
 
+func IsBoolean(s *string) bool {
+	booleansTrue := map[string]bool{"t": true, "T": true, "true": true,
+		"True": true, "TRUE": true}
+	booleansFalse := map[string]bool{"f": true, "F": true, "false": true,
+		"False": true, "FALSE": true}
+	boolean := booleansTrue[*s] || booleansFalse[*s]
+	if boolean {
+		if booleansTrue[*s] {
+			*s = "true"
+		} else {
+			*s = "false"
+		}
+	}
+	return boolean
+
+}
+
+func DetectType(s *string) string {
+	if strings.HasPrefix(*s, "\"") && strings.HasSuffix(*s, "\"") {
+		*s = strings.TrimPrefix(*s, "\"")
+		*s = strings.TrimSuffix(*s, "\"")
+		return "string"
+	} else if strings.HasSuffix(*s, "i") {
+		*s = strings.TrimSuffix(*s, "i")
+		return "int"
+	} else if IsBoolean(s) {
+		return "bool"
+	} else {
+		return "float"
+	}
+}
+
 func (l *LineInfo) ParseInfuxDBLine(line string) error {
 	tagsMap := make(map[string]string)
 	keysToRemove := []string{"machine_id", "host"}
@@ -352,6 +384,7 @@ func makeQuery(machineID string, lineInfo *LineInfo, start time.Time, backends [
 		monitoring, err := directory.CreateOrOpen(backend.db, []string{"monitoring"}, nil)
 		if err != nil {
 			log.Printf("Can't open directory, error: %v", err)
+			return
 		}
 
 		log.Println("Inside the goroutine")
@@ -362,12 +395,32 @@ func makeQuery(machineID string, lineInfo *LineInfo, start time.Time, backends [
 		_, err = backend.db.Transact(func(tr fdb.Transaction) (ret interface{}, err error) {
 
 			for i, field := range lineInfo.fields {
+				valueType := DetectType(&lineInfo.values[i])
+				var tupleToInsert []byte
+				if valueType == "int" || valueType == "float" {
+					var value float64
+					value, err = strconv.ParseFloat(lineInfo.values[i], 64)
+					if err != nil {
+						log.Printf("Can't conver string to float, error: %v", err)
+						return
+					}
+					tupleToInsert = tuple.Tuple{value}.Pack()
+				} else if valueType == "bool" {
+					var value bool
+					value, err = strconv.ParseBool(lineInfo.values[i])
+					tupleToInsert = tuple.Tuple{value}.Pack()
+				} else if valueType == "string" {
+					tupleToInsert = tuple.Tuple{lineInfo.values[i]}.Pack()
+				} else {
+					log.Printf("Unknown data type")
+					return
+				}
 				tr.Set(monitoring.Pack(tuple.Tuple{machineID,
 					lineInfo.metric + "." + field, start.Year(), int(start.Month()), start.Day(),
-					start.Hour(), start.Minute(), start.Second()}), []byte(tuple.Tuple{lineInfo.values[i]}.Pack()))
+					start.Hour(), start.Minute(), start.Second()}), []byte(tupleToInsert))
 
-				tr.Set(availableMetrics.Pack(tuple.Tuple{machineID,
-					lineInfo.metric}), []byte(tuple.Tuple{field}.Pack()))
+				tr.Set(availableMetrics.Pack(tuple.Tuple{machineID, valueType,
+					lineInfo.metric, field}), []byte(tuple.Tuple{""}.Pack()))
 				/*tr.Set(monitoringMinute.Pack(tuple.Tuple{machineID,
 					"system.load1", strconv.Itoa(start.Year()), strconv.Itoa(int(start.Month())), strconv.Itoa(start.Day()),
 					strconv.Itoa(start.Hour() + 3), strconv.Itoa(start.Minute())}), []byte("15"))
@@ -396,5 +449,6 @@ func makeQuery(machineID string, lineInfo *LineInfo, start time.Time, backends [
 			log.Printf("Insertion failed at %v", backend.name)
 			log.Printf("Cause of: %v", err)
 		}
+		break
 	}
 }
