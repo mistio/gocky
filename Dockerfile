@@ -6,7 +6,7 @@ RUN apt update && apt install -y build-essential && \
     rm foundationdb-clients_6.1.12-1_amd64.deb && \
     rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /go/src/github.com/influxdata /go/src/github.com/apple
+RUN mkdir -p /go/src/github.com/influxdata /go/src/github.com/apple /go/src/github.com/wavefronthq
 
 WORKDIR /go/src/github.com/influxdata
 
@@ -24,6 +24,14 @@ WORKDIR /go/src/github.com/apple/foundationdb
 
 RUN git checkout 6.1.12
 
+WORKDIR /go/src/github.com/wavefronthq/
+
+RUN git clone https://github.com/wavefrontHQ/wavefront-sdk-go
+
+WORKDIR /go/src/github.com/wavefronthq/wavefront-sdk-go
+
+RUN git checkout v0.9.1
+
 COPY . /go/src/github.com/mistio/gocky
 
 WORKDIR /go/src/github.com/mistio/gocky
@@ -32,4 +40,4 @@ RUN go get
 
 RUN go build
 
-ENTRYPOINT ["/go/src/github.com/mistio/gocky/gocky"] 
+ENTRYPOINT ["/go/src/github.com/mistio/gocky/gocky"]

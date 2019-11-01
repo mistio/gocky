@@ -11,7 +11,7 @@ type Config struct {
 	UDPRelays      []UDPConfig      `toml:"udp"`
 	BeringeiRelays []BeringeiConfig `toml:"beringei"`
 	GraphiteRelays []GraphiteConfig `toml:"graphite"`
-	FdbRelays []FdbConfig `toml:"fdb"`
+	FdbRelays      []FdbConfig      `toml:"fdb"`
 }
 
 type HTTPConfig struct {

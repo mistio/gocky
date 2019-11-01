@@ -4,12 +4,9 @@ import (
 	"compress/gzip"
 	"crypto/tls"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"net/http"
-	"sort"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -47,12 +44,6 @@ type FdbBackend struct {
 	name  string
 	table string
 	db    *fdb.Database //not sure about that
-}
-
-type LineInfo struct {
-	metric string
-	fields []string
-	values []string
 }
 
 func (f *FdbRelay) Name() string {
@@ -176,75 +167,15 @@ func NewFdbBackend(cfg *FdbOutputConfig) (*FdbBackend, error) {
 	}, nil
 }
 
-func NewLineInfo() (*LineInfo, error) {
-
-	l := new(LineInfo)
-	return l, nil
-}
-
-func IsBoolean(s *string) bool {
-	booleansTrue := map[string]bool{"t": true, "T": true, "true": true,
-		"True": true, "TRUE": true}
-	booleansFalse := map[string]bool{"f": true, "F": true, "false": true,
-		"False": true, "FALSE": true}
-	boolean := booleansTrue[*s] || booleansFalse[*s]
-	if boolean {
-		if booleansTrue[*s] {
-			*s = "true"
-		} else {
-			*s = "false"
-		}
-	}
-	return boolean
-
-}
-
-func DetectType(s *string) string {
-	if strings.HasPrefix(*s, "\"") && strings.HasSuffix(*s, "\"") {
-		*s = strings.TrimPrefix(*s, "\"")
-		*s = strings.TrimSuffix(*s, "\"")
-		return "string"
-	} else if strings.HasSuffix(*s, "i") {
-		*s = strings.TrimSuffix(*s, "i")
-		return "int"
-	} else if IsBoolean(s) {
-		return "bool"
-	} else {
-		return "float"
-	}
-}
-
-func (l *LineInfo) ParseInfuxDBLine(line string) error {
-	tagsMap := make(map[string]string)
-	keysToRemove := []string{"machine_id", "host"}
-
-	splittedSpaces := strings.Split(line, " ")
-	measurementAndTagsList := strings.SplitN(splittedSpaces[0], ",", 2)
-	measurement := measurementAndTagsList[0]
-	tags := strings.Split(measurementAndTagsList[1], ",")
-
-	for _, tag := range tags {
-		tagKV := strings.Split(tag, "=")
-		tagsMap[tagKV[0]] = tagKV[1]
-	}
-
-	for _, key := range keysToRemove {
-		delete(tagsMap, key)
-	}
-
-	tagsSorted := make([]string, 0, len(tagsMap))
-
-	for k, v := range tagsMap {
-		tagsSorted = append(tagsSorted, k+"-"+v)
-	}
-
-	sort.Strings(tagsSorted)
-
-	fieldsRaw := strings.Split(splittedSpaces[1], ",")
+func parseMeasurementAndTags(p models.Point) string {
+	keysToIgnore := map[string]bool{"machine_id": true, "host": true}
 	var b strings.Builder
-	b.WriteString(measurement)
-	for _, tag := range tagsSorted {
-		fmt.Fprintf(&b, ".%s", tag)
+	b.WriteString(string(p.Name()))
+
+	for _, tag := range p.Tags() {
+		if !keysToIgnore[string(tag.Key)] {
+			fmt.Fprintf(&b, ".%s-%s", string(tag.Key), string(tag.Value))
+		}
 	}
 
 	replaceSlashWithDash := func(r rune) rune {
@@ -254,17 +185,7 @@ func (l *LineInfo) ParseInfuxDBLine(line string) error {
 		return r
 	}
 
-	l.metric = strings.Map(replaceSlashWithDash, b.String())
-	l.fields = make([]string, len(fieldsRaw))
-	l.values = make([]string, len(fieldsRaw))
-
-	for i, fieldRaw := range fieldsRaw {
-		field := strings.Split(fieldRaw, "=")
-		l.fields[i] = field[0]
-		l.values[i] = field[1]
-	}
-
-	return nil
+	return strings.Map(replaceSlashWithDash, b.String())
 }
 
 func (f *FdbRelay) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
@@ -314,33 +235,22 @@ func (f *FdbRelay) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	for i := 0; ; i++ {
-		line, err := bodyBuf.ReadString('\n')
-		if err != nil {
-			if err != io.EOF {
-				log.Printf("buf error on line %d: %s", i, err)
-			}
-			break
-		}
-		log.Printf("=================START========================\n")
-		log.Printf("line: %s\n", line)
+	log.Printf("=================START========================\n")
+	log.Println(machineID)
+	for _, point := range points {
 
-		lineInfo, err := NewLineInfo()
-		if err != nil {
-			log.Printf("unable to create LineInfo %s", err)
-		}
-		lineInfo.ParseInfuxDBLine(line)
+		makeQuery(machineID, point, f.backends)
 
-		log.Printf("metric: %s\n", lineInfo.metric)
+		/*log.Printf("name: %s\n", string(point.Name()))
+		log.Printf("tags:\n")
+		for _, tag := range point.Tags() {
+			log.Printf("	key: %s val: %s\n", string(tag.Key), string(tag.Value))
+		}
 		log.Printf("fields:\n")
-		for _, field := range lineInfo.fields {
-			log.Printf("%s\n", field)
-		}
-
-		go makeQuery(machineID, lineInfo, start, f.backends)
-
-		log.Printf("=================END========================\n")
+		log.Println(strconv.Itoa(point.Time().Year()), strconv.Itoa(int(point.Time().Month())), strconv.Itoa(point.Time().Day()),
+			strconv.Itoa(point.Time().Hour()), strconv.Itoa(point.Time().Minute()), strconv.Itoa(point.Time().Second()))*/
 	}
+	log.Printf("=================END========================\n")
 
 	// handle data points
 
@@ -376,8 +286,162 @@ func (f *FdbRelay) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 	resp.WriteHeader(204)
 }
 
+func createDataTuple(iter models.FieldIterator) ([]byte, error) {
+	if len(iter.FieldKey()) == 0 {
+		return nil, nil
+	}
+	switch iter.Type() {
+	case models.Float:
+		v, err := iter.FloatValue()
+		if err != nil {
+			log.Println("unable to unmarshal field %s: %s", string(iter.FieldKey()), err)
+			return nil, err
+		}
+		return tuple.Tuple{v}.Pack(), nil
+	case models.Integer:
+		v, err := iter.IntegerValue()
+		if err != nil {
+			log.Println("unable to unmarshal field %s: %s", string(iter.FieldKey()), err)
+			return nil, err
+		}
+		return tuple.Tuple{v}.Pack(), nil
+	case models.Unsigned:
+		v, err := iter.UnsignedValue()
+		if err != nil {
+			log.Println("unable to unmarshal field %s: %s", string(iter.FieldKey()), err)
+			return nil, err
+		}
+		return tuple.Tuple{v}.Pack(), nil
+	case models.String:
+		return tuple.Tuple{iter.StringValue()}.Pack(), nil
+	case models.Boolean:
+		v, err := iter.BooleanValue()
+		if err != nil {
+			log.Println("unable to unmarshal field %s: %s", string(iter.FieldKey()), err)
+			return nil, err
+		}
+		log.Printf("	%s = %t\n", string(iter.FieldKey()), v)
+		return tuple.Tuple{v}.Pack(), nil
+	}
+	return nil, nil
+}
+
+func createSumTuple(currentMinuteValue []byte, iter models.FieldIterator) ([]byte, error) {
+
+	switch iter.Type() {
+	case models.Float:
+		v, err := iter.FloatValue()
+		if err != nil {
+			log.Println("unable to unmarshal field %s: %s", string(iter.FieldKey()), err)
+			return nil, err
+		}
+		return createSumTupleFloat(currentMinuteValue, v)
+	case models.Integer:
+		v, err := iter.IntegerValue()
+		if err != nil {
+			log.Println("unable to unmarshal field %s: %s", string(iter.FieldKey()), err)
+			return nil, err
+		}
+		return createSumTupleInteger(currentMinuteValue, v)
+	case models.Unsigned:
+		v, err := iter.UnsignedValue()
+		if err != nil {
+			log.Println("unable to unmarshal field %s: %s", string(iter.FieldKey()), err)
+			return nil, err
+		}
+		return createSumTupleUnsigned(currentMinuteValue, v)
+	}
+	return nil, nil
+}
+
+func createSumTupleFloat(currentMinuteValue []byte, value float64) ([]byte, error) {
+	var sum, min, max float64
+	var count int64
+	if currentMinuteValue != nil {
+		currentMinuteTuple, err := tuple.Unpack(currentMinuteValue)
+		if err != nil {
+			log.Printf("Can't convet []byte to tuple, error: %v", err)
+			return nil, err
+		}
+		sum = currentMinuteTuple[0].(float64)
+		count = currentMinuteTuple[1].(int64)
+		min = currentMinuteTuple[2].(float64)
+		max = currentMinuteTuple[3].(float64)
+
+		sum += value
+		count++
+		if min > value {
+			min = value
+		}
+		if max < value {
+			max = value
+		}
+	} else {
+		sum, min, max = value, value, value
+		count = 1
+	}
+	return tuple.Tuple{sum, count, min, max}.Pack(), nil
+}
+
+func createSumTupleInteger(currentMinuteValue []byte, value int64) ([]byte, error) {
+	var sum, min, max int64
+	var count int64
+	if currentMinuteValue != nil {
+		currentMinuteTuple, err := tuple.Unpack(currentMinuteValue)
+		if err != nil {
+			log.Printf("Can't convet []byte to tuple, error: %v", err)
+			return nil, err
+		}
+		sum = currentMinuteTuple[0].(int64)
+		count = currentMinuteTuple[1].(int64)
+		min = currentMinuteTuple[2].(int64)
+		max = currentMinuteTuple[3].(int64)
+
+		sum += value
+		count++
+		if min > value {
+			min = value
+		}
+		if max < value {
+			max = value
+		}
+	} else {
+		sum, min, max = value, value, value
+		count = 1
+	}
+	return tuple.Tuple{sum, count, min, max}.Pack(), nil
+}
+
+func createSumTupleUnsigned(currentMinuteValue []byte, value uint64) ([]byte, error) {
+	var sum, count, min, max uint64
+	if currentMinuteValue != nil {
+		currentMinuteTuple, err := tuple.Unpack(currentMinuteValue)
+		if err != nil {
+			log.Printf("Can't convet []byte to tuple, error: %v", err)
+			return nil, err
+		}
+		sum = currentMinuteTuple[0].(uint64)
+		count = currentMinuteTuple[1].(uint64)
+		min = currentMinuteTuple[2].(uint64)
+		max = currentMinuteTuple[3].(uint64)
+
+		sum += value
+		count++
+		if min > value {
+			min = value
+		}
+		if max < value {
+			max = value
+		}
+	} else {
+		sum, min, max = value, value, value
+		count = 1
+	}
+	return tuple.Tuple{sum, count, min, max}.Pack(), nil
+}
+
 // Transforms data points into a single sql insert query, executes it for every back end
-func makeQuery(machineID string, lineInfo *LineInfo, start time.Time, backends []*FdbBackend) {
+func makeQuery(machineID string, point models.Point, backends []*FdbBackend) {
 	//I think there should be only one backend
 	for _, backend := range backends {
 		// Each backend could have different table name for metrics data
@@ -389,62 +453,45 @@ func makeQuery(machineID string, lineInfo *LineInfo, start time.Time, backends [
 
 		log.Println("Inside the goroutine")
 		availableMetrics := monitoring.Sub("available_metrics")
-
-		//monitoringMinute := monitoring.Sub("metric_per_minute")
+		monitoringMinute := monitoring.Sub("metric_per_minute")
 		//monitoringHour := monitoring.Sub("metric_per_hour")
+		metric := parseMeasurementAndTags(point)
 		_, err = backend.db.Transact(func(tr fdb.Transaction) (ret interface{}, err error) {
 
-			for i, field := range lineInfo.fields {
-				valueType := DetectType(&lineInfo.values[i])
-				var tupleToInsert []byte
-				if valueType == "int" || valueType == "float" {
-					var value float64
-					value, err = strconv.ParseFloat(lineInfo.values[i], 64)
-					if err != nil {
-						log.Printf("Can't conver string to float, error: %v", err)
-						return
-					}
-					tupleToInsert = tuple.Tuple{value}.Pack()
-				} else if valueType == "bool" {
-					var value bool
-					value, err = strconv.ParseBool(lineInfo.values[i])
-					tupleToInsert = tuple.Tuple{value}.Pack()
-				} else if valueType == "string" {
-					tupleToInsert = tuple.Tuple{lineInfo.values[i]}.Pack()
-				} else {
-					log.Printf("Unknown data type")
+			var dataTuple, minuteTuple []byte
+			iter := point.FieldIterator()
+			for iter.Next() {
+				dataTuple, err = createDataTuple(iter)
+				if err != nil {
 					return
 				}
-				tr.Set(monitoring.Pack(tuple.Tuple{machineID,
-					lineInfo.metric + "." + field, start.Year(), int(start.Month()), start.Day(),
-					start.Hour(), start.Minute(), start.Second()}), []byte(tupleToInsert))
+				if dataTuple == nil {
+					continue
+				}
+				if iter.Type() == models.Float || iter.Type() == models.Integer || iter.Type() == models.Float {
+					currentMinuteValue := tr.Get(monitoringMinute.Pack(tuple.Tuple{machineID,
+						metric + "." + string(iter.FieldKey()), point.Time().Year(), int(point.Time().Month()), point.Time().Day(),
+						point.Time().Hour(), point.Time().Minute()})).MustGet()
 
-				tr.Set(availableMetrics.Pack(tuple.Tuple{machineID, valueType,
-					lineInfo.metric, field}), []byte(tuple.Tuple{""}.Pack()))
-				/*tr.Set(monitoringMinute.Pack(tuple.Tuple{machineID,
-					"system.load1", strconv.Itoa(start.Year()), strconv.Itoa(int(start.Month())), strconv.Itoa(start.Day()),
-					strconv.Itoa(start.Hour() + 3), strconv.Itoa(start.Minute())}), []byte("15"))
-				tr.Set(monitoringHour.Pack(tuple.Tuple{machineID,
-					"system.load1", strconv.Itoa(start.Year()), strconv.Itoa(int(start.Month())), strconv.Itoa(start.Day()),
-					strconv.Itoa(start.Hour() + 3)}), []byte("15"))*/
-				log.Println(machineID,
-					lineInfo.metric+"."+field, strconv.Itoa(start.Year()), strconv.Itoa(int(start.Month())), strconv.Itoa(start.Day()),
-					strconv.Itoa(start.Hour()), strconv.Itoa(start.Minute()), strconv.Itoa(start.Second()), lineInfo.values[i])
+					minuteTuple, err = createSumTuple(currentMinuteValue, iter)
+					if err != nil {
+						return
+					}
+
+					tr.Set(monitoringMinute.Pack(tuple.Tuple{machineID,
+						metric + "." + string(iter.FieldKey()), point.Time().Year(), int(point.Time().Month()), point.Time().Day(),
+						point.Time().Hour(), point.Time().Minute()}), []byte(minuteTuple))
+				}
+				tr.Set(monitoring.Pack(tuple.Tuple{machineID,
+					metric + "." + string(iter.FieldKey()), point.Time().Year(), int(point.Time().Month()), point.Time().Day(),
+					point.Time().Hour(), point.Time().Minute(), point.Time().Second()}), []byte(dataTuple))
+
+				tr.Set(availableMetrics.Pack(tuple.Tuple{machineID, iter.Type().String(),
+					metric, string(iter.FieldKey())}), []byte(tuple.Tuple{""}.Pack()))
 			}
+
 			return
 		})
-		/*_, err = backend.db.ReadTransact(func(rtr fdb.ReadTransaction) (ret interface{}, err error) {
-			ri := rtr.GetRange(monitoring, fdb.RangeOptions{}).Iterator()
-			for ri.Advance() {
-				kv := ri.MustGet()
-				t, err := monitoring.Unpack(kv.Key)
-				if err != nil {
-					return nil, err
-				}
-				log.Printf("value: %s\n", t[0].(string))
-			}
-			return
-		})*/
 		if err != nil {
 			log.Printf("Insertion failed at %v", backend.name)
 			log.Printf("Cause of: %v", err)
