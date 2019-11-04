@@ -354,17 +354,35 @@ func createSumTuple(currentMinuteValue []byte, iter models.FieldIterator) ([]byt
 	return nil, nil
 }
 
+// Converts tuple element to uint64 because of type inconsistency in the default behaviour of the unpacking process.
+// Default behaviour returns int64 instead of uint64 when the value is small enough.
+// More details here: https://forums.foundationdb.org/t/using-unsigned-64-bit-integers-with-the-go-tuple-package/468/3
+func convertTupleElemToUint64(tupleElement interface{}) (uint64, error) {
+	switch v := tupleElement.(type) {
+	case int64:
+		return uint64(v), nil
+	case uint64:
+		return v, nil
+	default:
+		return 0, fmt.Errorf("Can't convert tupleElement interface{} to uint64, no valid integer value found")
+	}
+}
+
 func createSumTupleFloat(currentMinuteValue []byte, value float64) ([]byte, error) {
 	var sum, min, max float64
-	var count int64
+	var count uint64
 	if currentMinuteValue != nil {
 		currentMinuteTuple, err := tuple.Unpack(currentMinuteValue)
 		if err != nil {
-			log.Printf("Can't convet []byte to tuple, error: %v", err)
+			log.Printf("Can't convert []byte to tuple, error: %v", err)
 			return nil, err
 		}
 		sum = currentMinuteTuple[0].(float64)
-		count = currentMinuteTuple[1].(int64)
+		count, err = convertTupleElemToUint64(currentMinuteTuple[1])
+		if err != nil {
+			log.Printf("%v", err)
+			return nil, err
+		}
 		min = currentMinuteTuple[2].(float64)
 		max = currentMinuteTuple[3].(float64)
 
@@ -385,15 +403,19 @@ func createSumTupleFloat(currentMinuteValue []byte, value float64) ([]byte, erro
 
 func createSumTupleInteger(currentMinuteValue []byte, value int64) ([]byte, error) {
 	var sum, min, max int64
-	var count int64
+	var count uint64
 	if currentMinuteValue != nil {
 		currentMinuteTuple, err := tuple.Unpack(currentMinuteValue)
 		if err != nil {
-			log.Printf("Can't convet []byte to tuple, error: %v", err)
+			log.Printf("Can't convert []byte to tuple, error: %v", err)
 			return nil, err
 		}
 		sum = currentMinuteTuple[0].(int64)
-		count = currentMinuteTuple[1].(int64)
+		count, err = convertTupleElemToUint64(currentMinuteTuple[1])
+		if err != nil {
+			log.Printf("%v", err)
+			return nil, err
+		}
 		min = currentMinuteTuple[2].(int64)
 		max = currentMinuteTuple[3].(int64)
 
@@ -417,13 +439,29 @@ func createSumTupleUnsigned(currentMinuteValue []byte, value uint64) ([]byte, er
 	if currentMinuteValue != nil {
 		currentMinuteTuple, err := tuple.Unpack(currentMinuteValue)
 		if err != nil {
-			log.Printf("Can't convet []byte to tuple, error: %v", err)
+			log.Printf("Can't convert []byte to tuple, error: %v", err)
 			return nil, err
 		}
-		sum = currentMinuteTuple[0].(uint64)
-		count = currentMinuteTuple[1].(uint64)
-		min = currentMinuteTuple[2].(uint64)
-		max = currentMinuteTuple[3].(uint64)
+		sum, err = convertTupleElemToUint64(currentMinuteTuple[0])
+		if err != nil {
+			log.Printf("%v", err)
+			return nil, err
+		}
+		count, err = convertTupleElemToUint64(currentMinuteTuple[1])
+		if err != nil {
+			log.Printf("%v", err)
+			return nil, err
+		}
+		min, err = convertTupleElemToUint64(currentMinuteTuple[2])
+		if err != nil {
+			log.Printf("%v", err)
+			return nil, err
+		}
+		max, err = convertTupleElemToUint64(currentMinuteTuple[3])
+		if err != nil {
+			log.Printf("%v", err)
+			return nil, err
+		}
 
 		sum += value
 		count++
