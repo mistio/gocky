@@ -41,9 +41,9 @@ type FdbRelay struct {
 }
 
 type FdbBackend struct {
-	name  string
-	table string
-	db    *fdb.Database //not sure about that
+	name     string
+	location string
+	db       *fdb.Database
 }
 
 func (f *FdbRelay) Name() string {
@@ -161,9 +161,9 @@ func NewFdbBackend(cfg *FdbOutputConfig) (*FdbBackend, error) {
 	}
 
 	return &FdbBackend{
-		name: cfg.Name,
-		//table: cfg.Table, // TODO check which names it should have
-		db: &db,
+		name:     cfg.Name,
+		location: cfg.Location,
+		db:       &db,
 	}, nil
 }
 
@@ -372,19 +372,19 @@ func createSumValueFloat(currentValue []byte, value float64) ([]byte, error) {
 	var sum, min, max float64
 	var count uint64
 	if currentValue != nil {
-		currentMinuteTuple, err := tuple.Unpack(currentValue)
+		currentValueTuple, err := tuple.Unpack(currentValue)
 		if err != nil {
 			log.Printf("Can't convert []byte to tuple, error: %v", err)
 			return nil, err
 		}
-		sum = currentMinuteTuple[0].(float64)
-		count, err = convertTupleElemToUint64(currentMinuteTuple[1])
+		sum = currentValueTuple[0].(float64)
+		count, err = convertTupleElemToUint64(currentValueTuple[1])
 		if err != nil {
 			log.Printf("%v", err)
 			return nil, err
 		}
-		min = currentMinuteTuple[2].(float64)
-		max = currentMinuteTuple[3].(float64)
+		min = currentValueTuple[2].(float64)
+		max = currentValueTuple[3].(float64)
 
 		sum += value
 		count++
@@ -405,19 +405,19 @@ func createSumValueInteger(currentValue []byte, value int64) ([]byte, error) {
 	var sum, min, max int64
 	var count uint64
 	if currentValue != nil {
-		currentMinuteTuple, err := tuple.Unpack(currentValue)
+		currentValueTuple, err := tuple.Unpack(currentValue)
 		if err != nil {
 			log.Printf("Can't convert []byte to tuple, error: %v", err)
 			return nil, err
 		}
-		sum = currentMinuteTuple[0].(int64)
-		count, err = convertTupleElemToUint64(currentMinuteTuple[1])
+		sum = currentValueTuple[0].(int64)
+		count, err = convertTupleElemToUint64(currentValueTuple[1])
 		if err != nil {
 			log.Printf("%v", err)
 			return nil, err
 		}
-		min = currentMinuteTuple[2].(int64)
-		max = currentMinuteTuple[3].(int64)
+		min = currentValueTuple[2].(int64)
+		max = currentValueTuple[3].(int64)
 
 		sum += value
 		count++
@@ -437,27 +437,27 @@ func createSumValueInteger(currentValue []byte, value int64) ([]byte, error) {
 func createSumValueUnsigned(currentValue []byte, value uint64) ([]byte, error) {
 	var sum, count, min, max uint64
 	if currentValue != nil {
-		currentMinuteTuple, err := tuple.Unpack(currentValue)
+		currentValueTuple, err := tuple.Unpack(currentValue)
 		if err != nil {
 			log.Printf("Can't convert []byte to tuple, error: %v", err)
 			return nil, err
 		}
-		sum, err = convertTupleElemToUint64(currentMinuteTuple[0])
+		sum, err = convertTupleElemToUint64(currentValueTuple[0])
 		if err != nil {
 			log.Printf("%v", err)
 			return nil, err
 		}
-		count, err = convertTupleElemToUint64(currentMinuteTuple[1])
+		count, err = convertTupleElemToUint64(currentValueTuple[1])
 		if err != nil {
 			log.Printf("%v", err)
 			return nil, err
 		}
-		min, err = convertTupleElemToUint64(currentMinuteTuple[2])
+		min, err = convertTupleElemToUint64(currentValueTuple[2])
 		if err != nil {
 			log.Printf("%v", err)
 			return nil, err
 		}
-		max, err = convertTupleElemToUint64(currentMinuteTuple[3])
+		max, err = convertTupleElemToUint64(currentValueTuple[3])
 		if err != nil {
 			log.Printf("%v", err)
 			return nil, err
