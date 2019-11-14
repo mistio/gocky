@@ -129,7 +129,7 @@ func NewFdbRelay(cfg FdbConfig) (Relay, error) {
 			return nil, err
 		}
 		f.backends = append(f.backends, backend)
-	} // TODO WILL UNCOMMENT SOON
+	}
 
 	f.enableMetering = cfg.EnableMetering
 	f.ampqURL = cfg.AMQPUrl
@@ -286,7 +286,7 @@ func (f *FdbRelay) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 	resp.WriteHeader(204)
 }
 
-func createDataTuple(iter models.FieldIterator) ([]byte, error) {
+func createSecondValue(iter models.FieldIterator) ([]byte, error) {
 	if len(iter.FieldKey()) == 0 {
 		return nil, nil
 	}
@@ -326,7 +326,7 @@ func createDataTuple(iter models.FieldIterator) ([]byte, error) {
 	return nil, nil
 }
 
-func createSumTuple(currentMinuteValue []byte, iter models.FieldIterator) ([]byte, error) {
+func createSumValue(currentValue []byte, iter models.FieldIterator) ([]byte, error) {
 
 	switch iter.Type() {
 	case models.Float:
@@ -335,21 +335,21 @@ func createSumTuple(currentMinuteValue []byte, iter models.FieldIterator) ([]byt
 			log.Println("unable to unmarshal field %s: %s", string(iter.FieldKey()), err)
 			return nil, err
 		}
-		return createSumTupleFloat(currentMinuteValue, v)
+		return createSumValueFloat(currentValue, v)
 	case models.Integer:
 		v, err := iter.IntegerValue()
 		if err != nil {
 			log.Println("unable to unmarshal field %s: %s", string(iter.FieldKey()), err)
 			return nil, err
 		}
-		return createSumTupleInteger(currentMinuteValue, v)
+		return createSumValueInteger(currentValue, v)
 	case models.Unsigned:
 		v, err := iter.UnsignedValue()
 		if err != nil {
 			log.Println("unable to unmarshal field %s: %s", string(iter.FieldKey()), err)
 			return nil, err
 		}
-		return createSumTupleUnsigned(currentMinuteValue, v)
+		return createSumValueUnsigned(currentValue, v)
 	}
 	return nil, nil
 }
@@ -368,11 +368,11 @@ func convertTupleElemToUint64(tupleElement interface{}) (uint64, error) {
 	}
 }
 
-func createSumTupleFloat(currentMinuteValue []byte, value float64) ([]byte, error) {
+func createSumValueFloat(currentValue []byte, value float64) ([]byte, error) {
 	var sum, min, max float64
 	var count uint64
-	if currentMinuteValue != nil {
-		currentMinuteTuple, err := tuple.Unpack(currentMinuteValue)
+	if currentValue != nil {
+		currentMinuteTuple, err := tuple.Unpack(currentValue)
 		if err != nil {
 			log.Printf("Can't convert []byte to tuple, error: %v", err)
 			return nil, err
@@ -401,11 +401,11 @@ func createSumTupleFloat(currentMinuteValue []byte, value float64) ([]byte, erro
 	return tuple.Tuple{sum, count, min, max}.Pack(), nil
 }
 
-func createSumTupleInteger(currentMinuteValue []byte, value int64) ([]byte, error) {
+func createSumValueInteger(currentValue []byte, value int64) ([]byte, error) {
 	var sum, min, max int64
 	var count uint64
-	if currentMinuteValue != nil {
-		currentMinuteTuple, err := tuple.Unpack(currentMinuteValue)
+	if currentValue != nil {
+		currentMinuteTuple, err := tuple.Unpack(currentValue)
 		if err != nil {
 			log.Printf("Can't convert []byte to tuple, error: %v", err)
 			return nil, err
@@ -434,10 +434,10 @@ func createSumTupleInteger(currentMinuteValue []byte, value int64) ([]byte, erro
 	return tuple.Tuple{sum, count, min, max}.Pack(), nil
 }
 
-func createSumTupleUnsigned(currentMinuteValue []byte, value uint64) ([]byte, error) {
+func createSumValueUnsigned(currentValue []byte, value uint64) ([]byte, error) {
 	var sum, count, min, max uint64
-	if currentMinuteValue != nil {
-		currentMinuteTuple, err := tuple.Unpack(currentMinuteValue)
+	if currentValue != nil {
+		currentMinuteTuple, err := tuple.Unpack(currentValue)
 		if err != nil {
 			log.Printf("Can't convert []byte to tuple, error: %v", err)
 			return nil, err
@@ -478,9 +478,8 @@ func createSumTupleUnsigned(currentMinuteValue []byte, value uint64) ([]byte, er
 	return tuple.Tuple{sum, count, min, max}.Pack(), nil
 }
 
-// Transforms data points into a single sql insert query, executes it for every back end
+// Transforms data points into a single sql insert query, executes it for every backend
 func makeQuery(machineID string, point models.Point, backends []*FdbBackend) {
-	//I think there should be only one backend
 	for _, backend := range backends {
 		// Each backend could have different table name for metrics data
 		monitoring, err := directory.CreateOrOpen(backend.db, []string{"monitoring"}, nil)
@@ -496,33 +495,33 @@ func makeQuery(machineID string, point models.Point, backends []*FdbBackend) {
 		metric := parseMeasurementAndTags(point)
 		_, err = backend.db.Transact(func(tr fdb.Transaction) (ret interface{}, err error) {
 
-			var dataTuple, minuteTuple []byte
+			var secondValue, minuteValue []byte
 			iter := point.FieldIterator()
 			for iter.Next() {
-				dataTuple, err = createDataTuple(iter)
+				secondValue, err = createSecondValue(iter)
 				if err != nil {
 					return
 				}
-				if dataTuple == nil {
+				if secondValue == nil {
 					continue
 				}
-				if iter.Type() == models.Float || iter.Type() == models.Integer || iter.Type() == models.Float {
-					currentMinuteValue := tr.Get(monitoringMinute.Pack(tuple.Tuple{machineID,
+				if iter.Type() == models.Float || iter.Type() == models.Integer || iter.Type() == models.Unsigned {
+					previousMinuteValue := tr.Get(monitoringMinute.Pack(tuple.Tuple{machineID,
 						metric + "." + string(iter.FieldKey()), point.Time().Year(), int(point.Time().Month()), point.Time().Day(),
 						point.Time().Hour(), point.Time().Minute()})).MustGet()
 
-					minuteTuple, err = createSumTuple(currentMinuteValue, iter)
+					minuteValue, err = createSumValue(previousMinuteValue, iter)
 					if err != nil {
 						return
 					}
 
 					tr.Set(monitoringMinute.Pack(tuple.Tuple{machineID,
 						metric + "." + string(iter.FieldKey()), point.Time().Year(), int(point.Time().Month()), point.Time().Day(),
-						point.Time().Hour(), point.Time().Minute()}), []byte(minuteTuple))
+						point.Time().Hour(), point.Time().Minute()}), []byte(minuteValue))
 				}
 				tr.Set(monitoring.Pack(tuple.Tuple{machineID,
 					metric + "." + string(iter.FieldKey()), point.Time().Year(), int(point.Time().Month()), point.Time().Day(),
-					point.Time().Hour(), point.Time().Minute(), point.Time().Second()}), []byte(dataTuple))
+					point.Time().Hour(), point.Time().Minute(), point.Time().Second()}), []byte(secondValue))
 
 				tr.Set(availableMetrics.Pack(tuple.Tuple{machineID, iter.Type().String(),
 					metric, string(iter.FieldKey())}), []byte(tuple.Tuple{""}.Pack()))
@@ -534,6 +533,5 @@ func makeQuery(machineID string, point models.Point, backends []*FdbBackend) {
 			log.Printf("Insertion failed at %v", backend.name)
 			log.Printf("Cause of: %v", err)
 		}
-		break
 	}
 }
