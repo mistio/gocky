@@ -72,6 +72,7 @@ func NewHTTP(cfg HTTPConfig) (Relay, error) {
 			return nil, err
 		}
 
+		log.Printf("New backend with type: %s\n", backend.backendType)
 		h.backends = append(h.backends, backend)
 	}
 
@@ -412,7 +413,8 @@ func (b *simplePoster) post(buf []byte, query string, auth string) (*responseDat
 
 type httpBackend struct {
 	poster
-	name string
+	name        string
+	backendType string
 }
 
 func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
@@ -452,8 +454,9 @@ func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
 	}
 
 	return &httpBackend{
-		poster: p,
-		name:   cfg.Name,
+		poster:      p,
+		name:        cfg.Name,
+		backendType: cfg.BackendType,
 	}, nil
 }
 
