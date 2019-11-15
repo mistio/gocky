@@ -42,5 +42,6 @@ func main() {
 	}()
 
 	log.Println("starting relays...")
+	log.Println("gogo...")
 	r.Run()
 }

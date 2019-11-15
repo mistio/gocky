@@ -49,6 +49,9 @@ type HTTPOutputConfig struct {
 	// Location should be set to the URL of the backend server's write endpoint
 	Location string `toml:"location"`
 
+	// Type of the backend server e.g. influxdb, graphite, etc.
+	BackendType string `toml:"type"`
+
 	// Timeout sets a per-backend timeout for write requests. (Default 10s)
 	// The format used is the same seen in time.ParseDuration
 	Timeout string `toml:"timeout"`

@@ -25,11 +25,12 @@ var amqpURL string
 
 // GraphiteRelay is a relay for graphite backends
 type GraphiteRelay struct {
-	addr string
-	name string
-
+	addr   string
+	name   string
 	schema string
-	cert   string
+
+	cert string
+	// rp string
 
 	closing int64
 	l       net.Listener
@@ -43,6 +44,49 @@ type GraphiteRelay struct {
 	cronSchedule string
 
 	backends []*graphiteBackend
+}
+
+func NewGraphiteRelay(cfg GraphiteConfig) (Relay, error) {
+	g := new(GraphiteRelay)
+
+	g.addr = cfg.Addr
+	g.name = cfg.Name
+
+	g.cert = cfg.SSLCombinedPem
+
+	g.schema = "http"
+	if g.cert != "" {
+		g.schema = "https"
+	}
+
+	for i := range cfg.Outputs {
+		backend, err := NewGraphiteBackend(&cfg.Outputs[i])
+		if err != nil {
+			return nil, err
+		}
+
+		g.backends = append(g.backends, backend)
+	}
+
+	g.enableMetering = cfg.EnableMetering
+	g.ampqURL = cfg.AMQPUrl
+	amqpURL = cfg.AMQPUrl
+
+	if g.enableMetering && g.ampqURL == "" {
+		g.enableMetering = false
+		log.Println("You have to set AMQPUrl in config for metering to work")
+		log.Println("Disabling metering for now")
+	}
+
+	g.dropUnauthorized = cfg.DropUnauthorized
+
+	g.cronSchedule = cfg.CronSchedule
+
+	if g.cronSchedule != "" {
+		g.cronJob = cron.New()
+	}
+
+	return g, nil
 }
 
 func (g *GraphiteRelay) Name() string {
@@ -96,71 +140,10 @@ func (g *GraphiteRelay) Stop() error {
 
 }
 
-func NewGraphiteRelay(cfg GraphiteConfig) (Relay, error) {
-	g := new(GraphiteRelay)
-
-	g.addr = cfg.Addr
-	g.name = cfg.Name
-
-	g.cert = cfg.SSLCombinedPem
-
-	g.schema = "http"
-	if g.cert != "" {
-		g.schema = "https"
-	}
-
-	for i := range cfg.Outputs {
-		backend, err := NewGraphiteBackend(&cfg.Outputs[i])
-		if err != nil {
-			return nil, err
-		}
-
-		g.backends = append(g.backends, backend)
-	}
-
-	g.enableMetering = cfg.EnableMetering
-	g.ampqURL = cfg.AMQPUrl
-	amqpURL = cfg.AMQPUrl
-
-	if g.enableMetering && g.ampqURL == "" {
-		g.enableMetering = false
-		log.Println("You have to set AMQPUrl in config for metering to work")
-		log.Println("Disabling metering for now")
-	}
-
-	g.dropUnauthorized = cfg.DropUnauthorized
-
-	g.cronSchedule = cfg.CronSchedule
-
-	if g.cronSchedule != "" {
-		g.cronJob = cron.New()
-	}
-
-	return g, nil
-}
-
-// NewGraphiteBackend Initializes a new Graphite Backend
-func NewGraphiteBackend(cfg *GraphiteOutputConfig) (*graphiteBackend, error) {
-	if cfg.Name == "" {
-		cfg.Name = cfg.Location
-	}
-
-	return &graphiteBackend{
-		name:     cfg.Name,
-		location: cfg.Location,
-	}, nil
-}
-
-type graphiteBackend struct {
-	// poster
-	name string
-
-	location string
-}
-
 func (g *GraphiteRelay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 
+	//// has to go in a new func
 	graphiteServers := make([]string, len(g.backends))
 	for i := range g.backends {
 		graphiteServers = append(graphiteServers, g.backends[i].location)
@@ -175,6 +158,7 @@ func (g *GraphiteRelay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusInternalServerError, "unable to connect to graphite")
 		log.Fatalf("Could not connect to graphite: %s", conErr)
 	}
+	////// till here
 
 	queryParams := r.URL.Query()
 
@@ -223,6 +207,7 @@ func (g *GraphiteRelay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// from here
 	machineID := ""
 	if r.Header["X-Gocky-Tag-Machine-Id"] != nil {
 		machineID = r.Header["X-Gocky-Tag-Machine-Id"][0]
@@ -241,6 +226,8 @@ func (g *GraphiteRelay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go pushToGraphite(points, graphiteClient, machineID, sourceType)
+
+	// to here
 
 	if g.enableMetering {
 		orgID := "Unauthorized"
@@ -336,4 +323,23 @@ func pushToGraphite(points []models.Point, g *graphite.Graphite, machineID, sour
 		}
 	}
 
+}
+
+type graphiteBackend struct {
+	// poster
+	name string
+
+	location string
+}
+
+// NewGraphiteBackend Initializes a new Graphite Backend
+func NewGraphiteBackend(cfg *GraphiteOutputConfig) (*graphiteBackend, error) {
+	if cfg.Name == "" {
+		cfg.Name = cfg.Location
+	}
+
+	return &graphiteBackend{
+		name:     cfg.Name,
+		location: cfg.Location,
+	}, nil
 }
