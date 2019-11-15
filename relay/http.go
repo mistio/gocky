@@ -72,7 +72,6 @@ func NewHTTP(cfg HTTPConfig) (Relay, error) {
 			return nil, err
 		}
 
-		log.Printf("New backend with type: %s\n", backend.backendType)
 		h.backends = append(h.backends, backend)
 	}
 
@@ -173,7 +172,6 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	queryParams := r.URL.Query()
 
-	//// has to go in a new influxdb specific func
 	// fail early if we're missing the database
 	if queryParams.Get("db") == "" {
 		jsonError(w, http.StatusBadRequest, "missing parameter: db")
@@ -183,7 +181,6 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if queryParams.Get("rp") == "" && h.rp != "" {
 		queryParams.Set("rp", h.rp)
 	}
-	// till here
 
 	var body = r.Body
 
@@ -258,8 +255,6 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		mu.Unlock()
 	}
 
-	//////// from here
-
 	// normalize query string
 	query := queryParams.Encode()
 
@@ -322,8 +317,6 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errResponse.Write(w)
-
-	/////// to here
 }
 
 type responseData struct {
@@ -419,8 +412,7 @@ func (b *simplePoster) post(buf []byte, query string, auth string) (*responseDat
 
 type httpBackend struct {
 	poster
-	name        string
-	backendType string
+	name string
 }
 
 func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
@@ -460,9 +452,8 @@ func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
 	}
 
 	return &httpBackend{
-		poster:      p,
-		name:        cfg.Name,
-		backendType: cfg.BackendType,
+		poster: p,
+		name:   cfg.Name,
 	}, nil
 }
 

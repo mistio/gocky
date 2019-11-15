@@ -12,14 +12,6 @@ WORKDIR /go/src/github.com/influxdata/influxdb
 
 RUN git checkout v1.7.7
 
-WORKDIR /go/src/github.com/wavefronthq/
-
-RUN git clone https://github.com/wavefrontHQ/wavefront-sdk-go
-
-WORKDIR /go/src/github.com/wavefronthq/wavefront-sdk-go
-
-RUN git checkout v0.9.1
-
 COPY . /go/src/github.com/mistio/gocky
 
 WORKDIR /go/src/github.com/mistio/gocky
@@ -28,4 +20,4 @@ RUN go get
 
 RUN go build
 
-ENTRYPOINT ["/go/src/github.com/mistio/gocky/gocky"]
+ENTRYPOINT ["/go/src/github.com/mistio/gocky/gocky"] 
