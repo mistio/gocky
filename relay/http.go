@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/influxdata/influxdb/models"
 	"github.com/influxdata/telegraf/plugins/outputs/graphite"
 
@@ -315,7 +316,13 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				defer wg.Done()
 				pushToGraphite(points, graphiteClient, machineID, sourceType)
 			}()
+		} else if b.backendType == "fdb" {
+			go func() {
+				defer wg.Done()
+				pushToFdb(points, machineID, b)
+			}()
 		} else {
+			defer wg.Done()
 			log.Printf("Unkown backend type: %q posting to relay: %q with backend name: %q", b.backendType, h.Name(), b.name)
 		}
 
@@ -452,6 +459,7 @@ type httpBackend struct {
 	name        string
 	backendType string
 	location    string
+	db          *fdb.Database
 }
 
 func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
@@ -496,15 +504,35 @@ func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
 			name:        cfg.Name,
 			backendType: cfg.BackendType,
 			location:    "",
+			db:          nil,
 		}, nil
-	}
+	} else if cfg.BackendType == "graphite" {
 
-	return &httpBackend{
-		poster:      nil,
-		name:        cfg.Name,
-		backendType: cfg.BackendType,
-		location:    cfg.Location,
-	}, nil
+		return &httpBackend{
+			poster:      nil,
+			name:        cfg.Name,
+			backendType: cfg.BackendType,
+			location:    cfg.Location,
+			db:          nil,
+		}, nil
+	} else if cfg.BackendType == "fdb" {
+
+		fdb.MustAPIVersion(610)
+		db, err := fdb.OpenDefault()
+		if err != nil {
+			return nil, err
+		}
+
+		return &httpBackend{
+			poster:      nil,
+			name:        cfg.Name,
+			backendType: cfg.BackendType,
+			location:    cfg.Location,
+			db:          &db,
+		}, nil
+	} else {
+		return nil, fmt.Errorf("Unknown backend type '%v'", cfg.BackendType)
+	}
 }
 
 var ErrBufferFull = errors.New("retry buffer full")

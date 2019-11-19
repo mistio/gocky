@@ -535,3 +535,61 @@ func makeQuery(machineID string, point models.Point, backends []*FdbBackend) {
 		}
 	}
 }
+
+// Transforms data points into a single sql insert query, executes it for every backend
+func pushToFdb(points []models.Point, machineID string, backend *httpBackend) {
+	// Each backend could have different table name for metrics data
+	monitoring, err := directory.CreateOrOpen(backend.db, []string{"monitoring"}, nil)
+	if err != nil {
+		log.Printf("Can't open directory, error: %v", err)
+		return
+	}
+
+	availableMetrics := monitoring.Sub("available_metrics")
+	monitoringMinute := monitoring.Sub("metric_per_minute")
+	//monitoringHour := monitoring.Sub("metric_per_hour")
+
+	for _, point := range points {
+		metric := parseMeasurementAndTags(point)
+		_, err = backend.db.Transact(func(tr fdb.Transaction) (ret interface{}, err error) {
+
+			var secondValue, minuteValue []byte
+			iter := point.FieldIterator()
+			for iter.Next() {
+				secondValue, err = createSecondValue(iter)
+				if err != nil {
+					return
+				}
+				if secondValue == nil {
+					continue
+				}
+				if iter.Type() == models.Float || iter.Type() == models.Integer || iter.Type() == models.Unsigned {
+					previousMinuteValue := tr.Get(monitoringMinute.Pack(tuple.Tuple{machineID,
+						metric + "." + string(iter.FieldKey()), point.Time().Year(), int(point.Time().Month()), point.Time().Day(),
+						point.Time().Hour(), point.Time().Minute()})).MustGet()
+
+					minuteValue, err = createSumValue(previousMinuteValue, iter)
+					if err != nil {
+						return
+					}
+
+					tr.Set(monitoringMinute.Pack(tuple.Tuple{machineID,
+						metric + "." + string(iter.FieldKey()), point.Time().Year(), int(point.Time().Month()), point.Time().Day(),
+						point.Time().Hour(), point.Time().Minute()}), []byte(minuteValue))
+				}
+				tr.Set(monitoring.Pack(tuple.Tuple{machineID,
+					metric + "." + string(iter.FieldKey()), point.Time().Year(), int(point.Time().Month()), point.Time().Day(),
+					point.Time().Hour(), point.Time().Minute(), point.Time().Second()}), []byte(secondValue))
+
+				tr.Set(availableMetrics.Pack(tuple.Tuple{machineID, iter.Type().String(),
+					metric, string(iter.FieldKey())}), []byte(tuple.Tuple{""}.Pack()))
+			}
+
+			return
+		})
+		if err != nil {
+			log.Printf("Insertion failed at %v", backend.name)
+			log.Printf("Cause of: %v", err)
+		}
+	}
+}
