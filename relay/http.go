@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/influxdata/influxdb/models"
+	"github.com/influxdata/telegraf/plugins/outputs/graphite"
+
 	"github.com/robfig/cron"
 )
 
@@ -72,6 +74,7 @@ func NewHTTP(cfg HTTPConfig) (Relay, error) {
 			return nil, err
 		}
 
+		log.Printf("New backend with type: %s\n", backend.backendType)
 		h.backends = append(h.backends, backend)
 	}
 
@@ -172,12 +175,6 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	queryParams := r.URL.Query()
 
-	// fail early if we're missing the database
-	if queryParams.Get("db") == "" {
-		jsonError(w, http.StatusBadRequest, "missing parameter: db")
-		return
-	}
-
 	if queryParams.Get("rp") == "" && h.rp != "" {
 		queryParams.Set("rp", h.rp)
 	}
@@ -228,14 +225,21 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	machineID := ""
+	if r.Header["X-Gocky-Tag-Machine-Id"] != nil {
+		machineID = r.Header["X-Gocky-Tag-Machine-Id"][0]
+	} else {
+		if h.dropUnauthorized {
+			log.Println("Gocky Headers are missing. Dropping packages...")
+			jsonError(w, http.StatusForbidden, "cannot find Gocky headers")
+			return
+		}
+	}
+
 	if h.enableMetering {
 		orgID := "Unauthorized"
 		if r.Header["X-Gocky-Tag-Org-Id"] != nil {
 			orgID = r.Header["X-Gocky-Tag-Org-Id"][0]
-		}
-		machineID := ""
-		if r.Header["X-Gocky-Tag-Machine-Id"] != nil {
-			machineID = r.Header["X-Gocky-Tag-Machine-Id"][0]
 		}
 
 		mu.Lock()
@@ -255,6 +259,12 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		mu.Unlock()
 	}
 
+	sourceType := "unix"
+
+	if r.Header["X-Gocky-Tag-Source-Type"][0] == "windows" {
+		sourceType = "windows"
+	}
+
 	// normalize query string
 	query := queryParams.Encode()
 
@@ -270,18 +280,45 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	for _, b := range h.backends {
 		b := b
-		go func() {
-			defer wg.Done()
-			resp, err := b.post(outBytes, query, authHeader)
-			if err != nil {
-				log.Printf("Problem posting to relay %q backend %q: %v", h.Name(), b.name, err)
-			} else {
-				if resp.StatusCode/100 == 5 {
-					log.Printf("5xx response for relay %q backend %q: %v", h.Name(), b.name, resp.StatusCode)
-				}
-				responses <- resp
+		if b.backendType == "influxdb" {
+			// fail early if we're missing the database
+			if queryParams.Get("db") == "" {
+				jsonError(w, http.StatusBadRequest, "missing parameter: db")
+				return
 			}
-		}()
+			go func() {
+				defer wg.Done()
+				resp, err := b.post(outBytes, query, authHeader)
+				if err != nil {
+					log.Printf("Problem posting to relay %q backend %q: %v", h.Name(), b.name, err)
+				} else {
+					if resp.StatusCode/100 == 5 {
+						log.Printf("5xx response for relay %q backend %q: %v", h.Name(), b.name, resp.StatusCode)
+					}
+					responses <- resp
+				}
+			}()
+		} else if b.backendType == "graphite" {
+			graphiteServers := make([]string, 1)
+			graphiteServers = append(graphiteServers, b.location)
+			graphiteClient := &graphite.Graphite{
+				Servers: graphiteServers,
+				Prefix:  "bucky",
+			}
+
+			conErr := graphiteClient.Connect()
+			if conErr != nil {
+				jsonError(w, http.StatusInternalServerError, "unable to connect to graphite")
+				log.Fatalf("Could not connect to graphite: %s", conErr)
+			}
+			go func() {
+				defer wg.Done()
+				pushToGraphite(points, graphiteClient, machineID, sourceType)
+			}()
+		} else {
+			log.Printf("Unkown backend type: %q posting to relay: %q with backend name: %q", b.backendType, h.Name(), b.name)
+		}
+
 	}
 
 	go func() {
@@ -412,7 +449,9 @@ func (b *simplePoster) post(buf []byte, query string, auth string) (*responseDat
 
 type httpBackend struct {
 	poster
-	name string
+	name        string
+	backendType string
+	location    string
 }
 
 func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
@@ -429,31 +468,42 @@ func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
 		timeout = t
 	}
 
-	var p poster = newSimplePoster(cfg.Location, timeout, cfg.SkipTLSVerification)
+	if cfg.BackendType == "influxdb" {
+		var p poster = newSimplePoster(cfg.Location, timeout, cfg.SkipTLSVerification)
 
-	// If configured, create a retryBuffer per backend.
-	// This way we serialize retries against each backend.
-	if cfg.BufferSizeMB > 0 {
-		max := DefaultMaxDelayInterval
-		if cfg.MaxDelayInterval != "" {
-			m, err := time.ParseDuration(cfg.MaxDelayInterval)
-			if err != nil {
-				return nil, fmt.Errorf("error parsing max retry time %v", err)
+		// If configured, create a retryBuffer per backend.
+		// This way we serialize retries against each backend.
+		if cfg.BufferSizeMB > 0 {
+			max := DefaultMaxDelayInterval
+			if cfg.MaxDelayInterval != "" {
+				m, err := time.ParseDuration(cfg.MaxDelayInterval)
+				if err != nil {
+					return nil, fmt.Errorf("error parsing max retry time %v", err)
+				}
+				max = m
 			}
-			max = m
+
+			batch := DefaultBatchSizeKB * KB
+			if cfg.MaxBatchKB > 0 {
+				batch = cfg.MaxBatchKB * KB
+			}
+
+			p = newRetryBuffer(cfg.BufferSizeMB*MB, batch, max, p)
 		}
 
-		batch := DefaultBatchSizeKB * KB
-		if cfg.MaxBatchKB > 0 {
-			batch = cfg.MaxBatchKB * KB
-		}
-
-		p = newRetryBuffer(cfg.BufferSizeMB*MB, batch, max, p)
+		return &httpBackend{
+			poster:      p,
+			name:        cfg.Name,
+			backendType: cfg.BackendType,
+			location:    "",
+		}, nil
 	}
 
 	return &httpBackend{
-		poster: p,
-		name:   cfg.Name,
+		poster:      nil,
+		name:        cfg.Name,
+		backendType: cfg.BackendType,
+		location:    cfg.Location,
 	}, nil
 }
 
