@@ -536,6 +536,52 @@ func makeQuery(machineID string, point models.Point, backends []*FdbBackend) {
 	}
 }
 
+func createKeyTupleSecond(machineID string, metric string, iter models.FieldIterator, point models.Point) tuple.Tuple {
+	return tuple.Tuple{machineID,
+		metric + "." + string(iter.FieldKey()), point.Time().Year(), int(point.Time().Month()), point.Time().Day(),
+		point.Time().Hour(), point.Time().Minute(), point.Time().Second()}
+}
+
+func createKeyTupleMinute(machineID string, metric string, iter models.FieldIterator, point models.Point) tuple.Tuple {
+	return tuple.Tuple{machineID,
+		metric + "." + string(iter.FieldKey()), point.Time().Year(), int(point.Time().Month()), point.Time().Day(),
+		point.Time().Hour(), point.Time().Minute()}
+}
+
+func createKeyTupleHour(machineID string, metric string, iter models.FieldIterator, point models.Point) tuple.Tuple {
+	return tuple.Tuple{machineID,
+		metric + "." + string(iter.FieldKey()), point.Time().Year(), int(point.Time().Month()), point.Time().Day(),
+		point.Time().Hour()}
+}
+
+func createKeyTupleDay(machineID string, metric string, iter models.FieldIterator, point models.Point) tuple.Tuple {
+	return tuple.Tuple{machineID,
+		metric + "." + string(iter.FieldKey()), point.Time().Year(), int(point.Time().Month()), point.Time().Day()}
+}
+
+func createKeyTupleSum(machineID string, metric string, iter models.FieldIterator, point models.Point, resolution string) tuple.Tuple {
+	switch resolution {
+	case "minute":
+		return createKeyTupleMinute(machineID, metric, iter, point)
+	case "hour":
+		return createKeyTupleHour(machineID, metric, iter, point)
+	case "day":
+		return createKeyTupleDay(machineID, metric, iter, point)
+	}
+	return nil
+}
+
+func applySummarization(tr fdb.Transaction, monitoring directory.DirectorySubspace, machineID string, metric string, iter models.FieldIterator, point models.Point, resolution string) {
+	monitoringTime := monitoring.Sub("metric_per_" + resolution)
+	previousTimeValue := tr.Get(monitoringTime.Pack(createKeyTupleSum(machineID, metric, iter, point, resolution))).MustGet()
+	timeValue, err := createSumValue(previousTimeValue, iter)
+	if err != nil {
+		return
+	}
+
+	tr.Set(monitoringTime.Pack(createKeyTupleSum(machineID, metric, iter, point, resolution)), []byte(timeValue))
+}
+
 // Transforms data points into a single sql insert query, executes it for every backend
 func pushToFdb(points []models.Point, machineID string, backend *httpBackend) {
 	// Each backend could have different table name for metrics data
@@ -546,14 +592,12 @@ func pushToFdb(points []models.Point, machineID string, backend *httpBackend) {
 	}
 
 	availableMetrics := monitoring.Sub("available_metrics")
-	monitoringMinute := monitoring.Sub("metric_per_minute")
-	//monitoringHour := monitoring.Sub("metric_per_hour")
 
 	for _, point := range points {
 		metric := parseMeasurementAndTags(point)
 		_, err = backend.db.Transact(func(tr fdb.Transaction) (ret interface{}, err error) {
 
-			var secondValue, minuteValue []byte
+			var secondValue []byte
 			iter := point.FieldIterator()
 			for iter.Next() {
 				secondValue, err = createSecondValue(iter)
@@ -564,22 +608,12 @@ func pushToFdb(points []models.Point, machineID string, backend *httpBackend) {
 					continue
 				}
 				if iter.Type() == models.Float || iter.Type() == models.Integer || iter.Type() == models.Unsigned {
-					previousMinuteValue := tr.Get(monitoringMinute.Pack(tuple.Tuple{machineID,
-						metric + "." + string(iter.FieldKey()), point.Time().Year(), int(point.Time().Month()), point.Time().Day(),
-						point.Time().Hour(), point.Time().Minute()})).MustGet()
-
-					minuteValue, err = createSumValue(previousMinuteValue, iter)
-					if err != nil {
-						return
+					resolutions := []string{"minute", "hour", "day"}
+					for _, resolution := range resolutions {
+						applySummarization(tr, monitoring, machineID, metric, iter, point, resolution)
 					}
-
-					tr.Set(monitoringMinute.Pack(tuple.Tuple{machineID,
-						metric + "." + string(iter.FieldKey()), point.Time().Year(), int(point.Time().Month()), point.Time().Day(),
-						point.Time().Hour(), point.Time().Minute()}), []byte(minuteValue))
 				}
-				tr.Set(monitoring.Pack(tuple.Tuple{machineID,
-					metric + "." + string(iter.FieldKey()), point.Time().Year(), int(point.Time().Month()), point.Time().Day(),
-					point.Time().Hour(), point.Time().Minute(), point.Time().Second()}), []byte(secondValue))
+				tr.Set(monitoring.Pack(createKeyTupleSecond(machineID, metric, iter, point)), []byte(secondValue))
 
 				tr.Set(availableMetrics.Pack(tuple.Tuple{machineID, iter.Type().String(),
 					metric, string(iter.FieldKey())}), []byte(tuple.Tuple{""}.Pack()))
