@@ -299,21 +299,28 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				}
 			}()
 		} else if b.backendType == "graphite" {
-			graphiteServers := make([]string, 1)
-			graphiteServers = append(graphiteServers, b.location)
-			graphiteClient := &graphite.Graphite{
-				Servers: graphiteServers,
-				Prefix:  "bucky",
-			}
-
-			conErr := graphiteClient.Connect()
-			if conErr != nil {
-				jsonError(w, http.StatusInternalServerError, "unable to connect to graphite")
-				log.Fatalf("Could not connect to graphite: %s", conErr)
-			}
 			go func() {
 				defer wg.Done()
-				pushToGraphite(points, graphiteClient, machineID, sourceType)
+				graphiteServers := make([]string, 1)
+				graphiteServers = append(graphiteServers, b.location)
+				graphiteClient := &graphite.Graphite{
+					Servers: graphiteServers,
+					Prefix:  "bucky",
+				}
+
+				conErr := graphiteClient.Connect()
+				if conErr != nil {
+					jsonError(w, http.StatusInternalServerError, "unable to connect to graphite")
+					log.Fatalf("Could not connect to graphite: %s", conErr)
+				}
+
+				newPoints, err := models.ParsePointsWithPrecision(outBytes, start, precision)
+				if err != nil {
+					jsonError(w, http.StatusBadRequest, "unable to parse points")
+					return
+				}
+
+				pushToGraphite(newPoints, graphiteClient, machineID, sourceType)
 			}()
 		} else {
 			log.Printf("Unkown backend type: %q posting to relay: %q with backend name: %q", b.backendType, h.Name(), b.name)
