@@ -273,7 +273,7 @@ func (g *GraphiteRelay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(204)
 }
 
-func pushToGraphite(points []models.Point, g *graphite.Graphite, machineID, sourceType string) {
+func pushToGraphite(points []models.Point, g *graphite.Graphite, machineID, sourceType string) (*responseData, error) {
 	for _, p := range points {
 		tags := make(map[string]string)
 		for _, v := range p.Tags() {
@@ -333,7 +333,14 @@ func pushToGraphite(points []models.Point, g *graphite.Graphite, machineID, sour
 		err := g.Write(graphiteMetrics)
 		if err != nil {
 			log.Println(err)
+			return nil, err
 		}
 	}
 
+	return &responseData{
+		ContentType:     "",
+		ContentEncoding: "",
+		StatusCode:      200,
+		Body:            nil,
+	}, nil
 }

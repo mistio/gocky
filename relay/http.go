@@ -320,7 +320,16 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 
-				pushToGraphite(newPoints, graphiteClient, machineID, sourceType)
+				resp, err := pushToGraphite(newPoints, graphiteClient, machineID, sourceType)
+				if err != nil {
+					log.Printf("Problem posting to relay %q backend %q: %v", h.Name(), b.name, err)
+				} else {
+					if resp.StatusCode/100 == 5 {
+						log.Printf("5xx response for relay %q backend %q: %v", h.Name(), b.name, resp.StatusCode)
+					}
+					responses <- resp
+				}
+
 			}()
 		} else {
 			log.Printf("Unkown backend type: %q posting to relay: %q with backend name: %q", b.backendType, h.Name(), b.name)
