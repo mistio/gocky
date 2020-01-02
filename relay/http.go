@@ -289,14 +289,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			go func() {
 				defer wg.Done()
 				resp, err := b.post(outBytes, query, authHeader)
-				if err != nil {
-					log.Printf("Problem posting to relay %q backend %q: %v", h.Name(), b.name, err)
-				} else {
-					if resp.StatusCode/100 == 5 {
-						log.Printf("5xx response for relay %q backend %q: %v", h.Name(), b.name, resp.StatusCode)
-					}
-					responses <- resp
-				}
+				resp.HandleResponse(h, b, responses, err)
 			}()
 		} else if b.backendType == "graphite" {
 			go func() {
@@ -321,15 +314,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				}
 
 				resp, err := pushToGraphite(newPoints, graphiteClient, machineID, sourceType)
-				if err != nil {
-					log.Printf("Problem posting to relay %q backend %q: %v", h.Name(), b.name, err)
-				} else {
-					if resp.StatusCode/100 == 5 {
-						log.Printf("5xx response for relay %q backend %q: %v", h.Name(), b.name, resp.StatusCode)
-					}
-					responses <- resp
-				}
-
+				resp.HandleResponse(h, b, responses, err)
 			}()
 		} else {
 			log.Printf("Unkown backend type: %q posting to relay: %q with backend name: %q", b.backendType, h.Name(), b.name)
@@ -391,6 +376,17 @@ func (rd *responseData) Write(w http.ResponseWriter) {
 	w.Header().Set("Content-Length", strconv.Itoa(len(rd.Body)))
 	w.WriteHeader(rd.StatusCode)
 	w.Write(rd.Body)
+}
+
+func (rd *responseData) HandleResponse(h *HTTP, b *httpBackend, responses chan *responseData, err error) {
+	if err != nil {
+		log.Printf("Problem posting to relay %q backend %q: %v", h.Name(), b.name, err)
+	} else {
+		if rd.StatusCode/100 == 5 {
+			log.Printf("5xx response for relay %q backend %q: %v", h.Name(), b.name, rd.StatusCode)
+		}
+		responses <- rd
+	}
 }
 
 func jsonError(w http.ResponseWriter, code int, message string) {
