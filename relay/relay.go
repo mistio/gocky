@@ -69,7 +69,7 @@ func New(config Config) (*Service, error) {
 		}
 		s.relays[f.Name()] = f
 
-	}*/
+	}
 	return s, nil
 }
 
