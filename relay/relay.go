@@ -25,7 +25,7 @@ func New(config Config) (*Service, error) {
 		s.relays[h.Name()] = h
 	}
 
-	/*for _, cfg := range config.UDPRelays {
+	for _, cfg := range config.UDPRelays {
 		u, err := NewUDP(cfg)
 		if err != nil {
 			return nil, err
