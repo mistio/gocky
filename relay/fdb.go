@@ -294,21 +294,21 @@ func createSecondValue(iter models.FieldIterator) ([]byte, error) {
 	case models.Float:
 		v, err := iter.FloatValue()
 		if err != nil {
-			log.Println("unable to unmarshal field %s: %s", string(iter.FieldKey()), err)
+			log.Printf("unable to unmarshal field %s: %s\n", string(iter.FieldKey()), err)
 			return nil, err
 		}
 		return tuple.Tuple{v}.Pack(), nil
 	case models.Integer:
 		v, err := iter.IntegerValue()
 		if err != nil {
-			log.Println("unable to unmarshal field %s: %s", string(iter.FieldKey()), err)
+			log.Printf("unable to unmarshal field %s: %s\n", string(iter.FieldKey()), err)
 			return nil, err
 		}
 		return tuple.Tuple{v}.Pack(), nil
 	case models.Unsigned:
 		v, err := iter.UnsignedValue()
 		if err != nil {
-			log.Println("unable to unmarshal field %s: %s", string(iter.FieldKey()), err)
+			log.Printf("unable to unmarshal field %s: %s\n", string(iter.FieldKey()), err)
 			return nil, err
 		}
 		return tuple.Tuple{v}.Pack(), nil
@@ -317,7 +317,7 @@ func createSecondValue(iter models.FieldIterator) ([]byte, error) {
 	case models.Boolean:
 		v, err := iter.BooleanValue()
 		if err != nil {
-			log.Println("unable to unmarshal field %s: %s", string(iter.FieldKey()), err)
+			log.Printf("unable to unmarshal field %s: %s\n", string(iter.FieldKey()), err)
 			return nil, err
 		}
 		log.Printf("	%s = %t\n", string(iter.FieldKey()), v)
@@ -332,21 +332,21 @@ func createSumValue(currentValue []byte, iter models.FieldIterator) ([]byte, err
 	case models.Float:
 		v, err := iter.FloatValue()
 		if err != nil {
-			log.Println("unable to unmarshal field %s: %s", string(iter.FieldKey()), err)
+			log.Printf("unable to unmarshal field %s: %s\n", string(iter.FieldKey()), err)
 			return nil, err
 		}
 		return createSumValueFloat(currentValue, v)
 	case models.Integer:
 		v, err := iter.IntegerValue()
 		if err != nil {
-			log.Println("unable to unmarshal field %s: %s", string(iter.FieldKey()), err)
+			log.Printf("unable to unmarshal field %s: %s\n", string(iter.FieldKey()), err)
 			return nil, err
 		}
 		return createSumValueInteger(currentValue, v)
 	case models.Unsigned:
 		v, err := iter.UnsignedValue()
 		if err != nil {
-			log.Println("unable to unmarshal field %s: %s", string(iter.FieldKey()), err)
+			log.Printf("unable to unmarshal field %s: %s\n", string(iter.FieldKey()), err)
 			return nil, err
 		}
 		return createSumValueUnsigned(currentValue, v)
@@ -374,7 +374,7 @@ func createSumValueFloat(currentValue []byte, value float64) ([]byte, error) {
 	if currentValue != nil {
 		currentValueTuple, err := tuple.Unpack(currentValue)
 		if err != nil {
-			log.Printf("Can't convert []byte to tuple, error: %v", err)
+			log.Printf("Can't convert []byte to tuple, error: %v\n", err)
 			return nil, err
 		}
 		sum = currentValueTuple[0].(float64)
@@ -407,7 +407,7 @@ func createSumValueInteger(currentValue []byte, value int64) ([]byte, error) {
 	if currentValue != nil {
 		currentValueTuple, err := tuple.Unpack(currentValue)
 		if err != nil {
-			log.Printf("Can't convert []byte to tuple, error: %v", err)
+			log.Printf("Can't convert []byte to tuple, error: %v\n", err)
 			return nil, err
 		}
 		sum = currentValueTuple[0].(int64)
@@ -439,7 +439,7 @@ func createSumValueUnsigned(currentValue []byte, value uint64) ([]byte, error) {
 	if currentValue != nil {
 		currentValueTuple, err := tuple.Unpack(currentValue)
 		if err != nil {
-			log.Printf("Can't convert []byte to tuple, error: %v", err)
+			log.Printf("Can't convert []byte to tuple, error: %v\n", err)
 			return nil, err
 		}
 		sum, err = convertTupleElemToUint64(currentValueTuple[0])
@@ -587,7 +587,7 @@ func pushToFdb(points []models.Point, machineID string, backend *httpBackend) {
 	// Each backend could have different table name for metrics data
 	monitoring, err := directory.CreateOrOpen(backend.db, []string{"monitoring"}, nil)
 	if err != nil {
-		log.Printf("Can't open directory, error: %v", err)
+		log.Printf("Can't open directory, error: %v\n", err)
 		return
 	}
 
@@ -622,8 +622,8 @@ func pushToFdb(points []models.Point, machineID string, backend *httpBackend) {
 			return
 		})
 		if err != nil {
-			log.Printf("Insertion failed at %v", backend.name)
-			log.Printf("Cause of: %v", err)
+			log.Printf("Insertion failed at %v\n", backend.name)
+			log.Printf("Cause of: %v\n", err)
 		}
 	}
 }
