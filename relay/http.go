@@ -326,10 +326,17 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		} else if b.backendType == "fdb" {
 			go func() {
 				defer wg.Done()
-				pushToFdb(points, machineID, b)
+
+				newPoints, err := models.ParsePointsWithPrecision(outBytes, start, precision)
+				if err != nil {
+					jsonError(w, http.StatusBadRequest, "unable to parse points")
+					return
+				}
+
+				pushToFdb(newPoints, machineID, b)
 			}()
 		} else {
-			defer wg.Done()
+			wg.Done()
 			log.Printf("Unkown backend type: %q posting to relay: %q with backend name: %q", b.backendType, h.Name(), b.name)
 		}
 
