@@ -331,8 +331,18 @@ func pushToGraphite(points []models.Point, g *graphite.Graphite, machineID, sour
 		}
 
 		err := g.Write(graphiteMetrics)
-		if err != nil {
+
+		for i := 0; i < 3; i++ {
+			if err == nil {
+				break
+			}
 			log.Println(err)
+			log.Printf("Retrying to send datapoints to graphite backend: %s\n", g.Servers[0])
+			time.Sleep(1000 * time.Millisecond)
+			err = g.Write(graphiteMetrics)
+		}
+
+		if err != nil {
 			return nil, err
 		}
 	}
