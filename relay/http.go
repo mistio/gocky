@@ -317,6 +317,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				resp.HandleResponse(h, b, responses, err)
 			}()
 		} else {
+			wg.Done()
 			log.Printf("Unkown backend type: %q posting to relay: %q with backend name: %q", b.backendType, h.Name(), b.name)
 		}
 
