@@ -542,6 +542,9 @@ func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
 			return nil, err
 		}
 
+		db.Options().SetTransactionTimeout(1000)
+		db.Options().SetTransactionRetryLimit(3)
+
 		return &httpBackend{
 			poster:      nil,
 			name:        cfg.Name,

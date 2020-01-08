@@ -602,7 +602,7 @@ func pushToFdb(points []models.Point, machineID string, backend *httpBackend) {
 			for iter.Next() {
 				secondValue, err = createSecondValue(iter)
 				if err != nil {
-					return
+					return nil, err
 				}
 				if secondValue == nil {
 					continue
@@ -619,7 +619,7 @@ func pushToFdb(points []models.Point, machineID string, backend *httpBackend) {
 					metric, string(iter.FieldKey())}), []byte(tuple.Tuple{""}.Pack()))
 			}
 
-			return
+			return nil, nil
 		})
 		if err != nil {
 			log.Printf("Insertion failed at %v\n", backend.name)
