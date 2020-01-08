@@ -327,7 +327,8 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 
-				pushToFdb(newPoints, machineID, b)
+				resp, err := pushToFdb(newPoints, machineID, b)
+				resp.HandleResponse(h, b, responses, err)
 			}()
 		} else {
 			wg.Done()

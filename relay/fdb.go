@@ -582,13 +582,11 @@ func applySummarization(tr fdb.Transaction, monitoring directory.DirectorySubspa
 	tr.Set(monitoringTime.Pack(createKeyTupleSum(machineID, metric, iter, point, resolution)), []byte(timeValue))
 }
 
-// Transforms data points into a single sql insert query, executes it for every backend
-func pushToFdb(points []models.Point, machineID string, backend *httpBackend) {
-	// Each backend could have different table name for metrics data
+func pushToFdb(points []models.Point, machineID string, backend *httpBackend) (*responseData, error) {
 	monitoring, err := directory.CreateOrOpen(backend.db, []string{"monitoring"}, nil)
 	if err != nil {
 		log.Printf("Can't open directory, error: %v\n", err)
-		return
+		return nil, err
 	}
 
 	availableMetrics := monitoring.Sub("available_metrics")
@@ -624,6 +622,14 @@ func pushToFdb(points []models.Point, machineID string, backend *httpBackend) {
 		if err != nil {
 			log.Printf("Insertion failed at %v\n", backend.name)
 			log.Printf("Cause of: %v\n", err)
+			return nil, err
 		}
 	}
+
+	return &responseData{
+		ContentType:     "",
+		ContentEncoding: "",
+		StatusCode:      200,
+		Body:            nil,
+	}, nil
 }
