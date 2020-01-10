@@ -381,11 +381,11 @@ func (rd *responseData) Write(w http.ResponseWriter) {
 
 func (rd *responseData) HandleResponse(h *HTTP, w http.ResponseWriter, b *httpBackend, responses chan *responseData, once *sync.Once, err error) {
 
-	onceSuccess := func() {
+	onFirstSuccess := func() {
 		w.WriteHeader(http.StatusNoContent)
 	}
 
-	onceUserError := func() {
+	onFirstUserError := func() {
 		rd.Write(w)
 	}
 
@@ -396,11 +396,11 @@ func (rd *responseData) HandleResponse(h *HTTP, w http.ResponseWriter, b *httpBa
 
 	switch rd.StatusCode / 100 {
 	case 2:
-		once.Do(onceSuccess)
+		once.Do(onFirstSuccess)
 
 	case 4:
 		// user error
-		once.Do(onceUserError)
+		once.Do(onFirstUserError)
 
 	case 5:
 		log.Printf("5xx response for relay %q backend %q: %v", h.Name(), b.name, rd.StatusCode)
