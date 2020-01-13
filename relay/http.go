@@ -288,6 +288,8 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var wg sync.WaitGroup
 	wg.Add(len(h.backends))
 
+	var once sync.Once
+
 	var responses = make(chan *responseData, len(h.backends))
 
 	for _, b := range h.backends {
@@ -301,7 +303,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			go func() {
 				defer wg.Done()
 				resp, err := pushToInfluxdb(b, outBytes, query, authHeader)
-				resp.HandleResponse(h, b, responses, err)
+				resp.HandleResponse(h, w, b, responses, &once, err)
 			}()
 		} else if b.backendType == "graphite" {
 			go func() {
@@ -326,7 +328,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				}
 
 				resp, err := pushToGraphite(newPoints, graphiteClient, machineID, sourceType)
-				resp.HandleResponse(h, b, responses, err)
+				resp.HandleResponse(h, w, b, responses, &once, err)
 			}()
 		} else if b.backendType == "fdb" {
 			go func() {
@@ -359,12 +361,10 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for resp := range responses {
 		switch resp.StatusCode / 100 {
 		case 2:
-			w.WriteHeader(http.StatusNoContent)
 			return
 
 		case 4:
 			// user error
-			resp.Write(w)
 			return
 
 		default:
@@ -405,15 +405,33 @@ func (rd *responseData) Write(w http.ResponseWriter) {
 	w.Write(rd.Body)
 }
 
-func (rd *responseData) HandleResponse(h *HTTP, b *httpBackend, responses chan *responseData, err error) {
+func (rd *responseData) HandleResponse(h *HTTP, w http.ResponseWriter, b *httpBackend, responses chan *responseData, once *sync.Once, err error) {
+
+	onFirstSuccess := func() {
+		w.WriteHeader(http.StatusNoContent)
+	}
+
+	onFirstUserError := func() {
+		rd.Write(w)
+	}
+
 	if err != nil {
 		log.Printf("Problem posting to relay %q backend %q: %v", h.Name(), b.name, err)
-	} else {
-		if rd.StatusCode/100 == 5 {
-			log.Printf("5xx response for relay %q backend %q: %v", h.Name(), b.name, rd.StatusCode)
-		}
-		responses <- rd
+		return
 	}
+
+	switch rd.StatusCode / 100 {
+	case 2:
+		once.Do(onFirstSuccess)
+
+	case 4:
+		// user error
+		once.Do(onFirstUserError)
+
+	case 5:
+		log.Printf("5xx response for relay %q backend %q: %v", h.Name(), b.name, rd.StatusCode)
+	}
+	responses <- rd
 }
 
 func jsonError(w http.ResponseWriter, code int, message string) {
