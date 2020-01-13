@@ -380,6 +380,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// failed to make any valid request...
 		log.Printf("Could not write points to any backend from relay: %q\n", h.Name())
 		jsonError(w, http.StatusServiceUnavailable, "unable to write points")
+		os.Exit(1)
 		return
 	}
 
@@ -575,7 +576,7 @@ func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
 		}, nil
 	} else if cfg.BackendType == "fdb" {
 
-		fdb.MustAPIVersion(610)
+		fdb.MustAPIVersion(620)
 		db, err := fdb.OpenDefault()
 		if err != nil {
 			return nil, err
