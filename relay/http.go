@@ -42,6 +42,7 @@ type HTTP struct {
 
 	cronJob      *cron.Cron
 	cronSchedule string
+	pushMetrics  chan bool
 
 	backends []*httpBackend
 }
@@ -111,6 +112,16 @@ func (h *HTTP) Run() error {
 	l, err := net.Listen("tcp", h.addr)
 
 	if h.cronSchedule != "" {
+		h.pushMetrics = make(chan bool, 1)
+		h.cronJob.AddFunc(h.cronSchedule,
+			func() {
+				select {
+				case h.pushMetrics <- true:
+					// Try to send true value (non-blocking)
+				default:
+					// Buffer is already full; do nothing
+				}
+			})
 		h.cronJob.AddFunc(h.cronSchedule, pushToAmqp)
 		h.cronJob.Start()
 	}
@@ -327,7 +338,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 
-				resp, err := pushToFdb(newPoints, machineID, b)
+				resp, err := pushToFdb(newPoints, machineID, h, b)
 				resp.HandleResponse(h, b, responses, err)
 			}()
 		} else {
@@ -365,6 +376,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// no successful writes
 	if errResponse == nil {
 		// failed to make any valid request...
+		log.Printf("Could not write points to any backend from relay: %q\n", h.Name())
 		jsonError(w, http.StatusServiceUnavailable, "unable to write points")
 		return
 	}

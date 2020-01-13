@@ -582,7 +582,7 @@ func applySummarization(tr fdb.Transaction, monitoring directory.DirectorySubspa
 	tr.Set(monitoringTime.Pack(createKeyTupleSum(machineID, metric, iter, point, resolution)), []byte(timeValue))
 }
 
-func pushToFdb(points []models.Point, machineID string, backend *httpBackend) (*responseData, error) {
+func pushToFdb(points []models.Point, machineID string, h *HTTP, backend *httpBackend) (*responseData, error) {
 	monitoring, err := directory.CreateOrOpen(backend.db, []string{"monitoring"}, nil)
 	if err != nil {
 		log.Printf("Can't open directory, error: %v\n", err)
@@ -590,6 +590,14 @@ func pushToFdb(points []models.Point, machineID string, backend *httpBackend) (*
 	}
 
 	availableMetrics := monitoring.Sub("available_metrics")
+	var push bool
+	select {
+	case push = <-h.pushMetrics:
+		// Receive true value from cronjob
+	default:
+		// No value to receive; proceed (non-blocking)
+		push = false
+	}
 
 	for _, point := range points {
 		metric := parseMeasurementAndTags(point)
@@ -613,8 +621,15 @@ func pushToFdb(points []models.Point, machineID string, backend *httpBackend) (*
 				}
 				tr.Set(monitoring.Pack(createKeyTupleSecond(machineID, metric, iter, point)), []byte(secondValue))
 
-				tr.Set(availableMetrics.Pack(tuple.Tuple{machineID, iter.Type().String(),
-					metric, string(iter.FieldKey())}), []byte(tuple.Tuple{""}.Pack()))
+				// Update available metrics at specific time intervals
+				if push {
+					metricExists := tr.Get(availableMetrics.Pack(tuple.Tuple{machineID, iter.Type().String(),
+						metric, string(iter.FieldKey())})).MustGet()
+					if metricExists == nil {
+						tr.Set(availableMetrics.Pack(tuple.Tuple{machineID, iter.Type().String(),
+							metric, string(iter.FieldKey())}), []byte(tuple.Tuple{""}.Pack()))
+					}
+				}
 			}
 
 			return nil, nil
