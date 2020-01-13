@@ -10,6 +10,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -48,9 +49,10 @@ type HTTP struct {
 }
 
 const (
-	DefaultHTTPTimeout      = 10 * time.Second
-	DefaultMaxDelayInterval = 10 * time.Second
+	DefaultHTTPTimeout      = 1 // in seconds
+	DefaultMaxDelayInterval = 1 // in seconds
 	DefaultBatchSizeKB      = 512
+	DefaultMaxRetries       = 3
 
 	KB = 1024
 	MB = 1024 * KB
@@ -341,7 +343,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				}
 
 				resp, err := pushToFdb(newPoints, machineID, h, b)
-				resp.HandleResponse(h, b, responses, err)
+				resp.HandleResponse(h, w, b, responses, &once, err)
 			}()
 		} else {
 			wg.Done()
@@ -417,6 +419,9 @@ func (rd *responseData) HandleResponse(h *HTTP, w http.ResponseWriter, b *httpBa
 
 	if err != nil {
 		log.Printf("Problem posting to relay %q backend %q: %v", h.Name(), b.name, err)
+		if b.failOnError {
+			os.Exit(1)
+		}
 		return
 	}
 
@@ -509,6 +514,7 @@ type httpBackend struct {
 	name        string
 	backendType string
 	location    string
+	failOnError bool
 	db          *fdb.Database
 }
 
@@ -517,7 +523,7 @@ func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
 		cfg.Name = cfg.Location
 	}
 
-	timeout := DefaultHTTPTimeout
+	timeout := DefaultHTTPTimeout * time.Second
 	if cfg.Timeout != "" {
 		t, err := time.ParseDuration(cfg.Timeout)
 		if err != nil {
@@ -532,7 +538,7 @@ func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
 		// If configured, create a retryBuffer per backend.
 		// This way we serialize retries against each backend.
 		if cfg.BufferSizeMB > 0 {
-			max := DefaultMaxDelayInterval
+			max := DefaultMaxDelayInterval * time.Second
 			if cfg.MaxDelayInterval != "" {
 				m, err := time.ParseDuration(cfg.MaxDelayInterval)
 				if err != nil {
@@ -554,6 +560,7 @@ func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
 			name:        cfg.Name,
 			backendType: cfg.BackendType,
 			location:    "",
+			failOnError: cfg.FailOnError,
 			db:          nil,
 		}, nil
 	} else if cfg.BackendType == "graphite" {
@@ -563,6 +570,7 @@ func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
 			name:        cfg.Name,
 			backendType: cfg.BackendType,
 			location:    cfg.Location,
+			failOnError: cfg.FailOnError,
 			db:          nil,
 		}, nil
 	} else if cfg.BackendType == "fdb" {
@@ -573,14 +581,15 @@ func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
 			return nil, err
 		}
 
-		db.Options().SetTransactionTimeout(1000)
-		db.Options().SetTransactionRetryLimit(3)
+		db.Options().SetTransactionTimeout(DefaultHTTPTimeout * 1000)
+		db.Options().SetTransactionRetryLimit(DefaultMaxRetries)
 
 		return &httpBackend{
 			poster:      nil,
 			name:        cfg.Name,
 			backendType: cfg.BackendType,
 			location:    cfg.Location,
+			failOnError: cfg.FailOnError,
 			db:          &db,
 		}, nil
 	} else {
@@ -606,13 +615,13 @@ func putBuf(b *bytes.Buffer) {
 
 func pushToInfluxdb(b *httpBackend, buf []byte, query string, auth string) (*responseData, error) {
 	resp, err := b.post(buf, query, auth)
-	for i := 0; i < 3; i++ {
+	for i := 0; i < DefaultMaxRetries; i++ {
 		if err == nil {
 			break
 		}
 		log.Println(err)
 		log.Printf("Retrying to send datapoints to influxdb backend: %s\n", b.location)
-		time.Sleep(1000 * time.Millisecond)
+		time.Sleep(DefaultHTTPTimeout * time.Second)
 		resp, err = b.post(buf, query, auth)
 	}
 	return resp, err

@@ -599,9 +599,9 @@ func pushToFdb(points []models.Point, machineID string, h *HTTP, backend *httpBa
 		push = false
 	}
 
-	for _, point := range points {
-		metric := parseMeasurementAndTags(point)
-		_, err = backend.db.Transact(func(tr fdb.Transaction) (ret interface{}, err error) {
+	_, err = backend.db.Transact(func(tr fdb.Transaction) (ret interface{}, err error) {
+		for _, point := range points {
+			metric := parseMeasurementAndTags(point)
 
 			var secondValue []byte
 			iter := point.FieldIterator()
@@ -631,14 +631,14 @@ func pushToFdb(points []models.Point, machineID string, h *HTTP, backend *httpBa
 					}
 				}
 			}
-
-			return nil, nil
-		})
-		if err != nil {
-			log.Printf("Insertion failed at %v\n", backend.name)
-			log.Printf("Cause of: %v\n", err)
-			return nil, err
 		}
+		return nil, nil
+	})
+
+	if err != nil {
+		log.Printf("Insertion failed at %v\n", backend.name)
+		log.Printf("Cause of: %v\n", err)
+		return nil, err
 	}
 
 	return &responseData{

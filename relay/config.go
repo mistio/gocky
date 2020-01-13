@@ -53,7 +53,10 @@ type HTTPOutputConfig struct {
 	// Type of the backend server e.g. influxdb, graphite, etc.
 	BackendType string `toml:"type"`
 
-	// Timeout sets a per-backend timeout for write requests. (Default 10s)
+	// Type of the backend server e.g. influxdb, graphite, etc.
+	FailOnError bool `toml:"fail-on-error"`
+
+	// Timeout sets a per-backend timeout for write requests. (Default 1s)
 	// The format used is the same seen in time.ParseDuration
 	Timeout string `toml:"timeout"`
 
@@ -64,8 +67,11 @@ type HTTPOutputConfig struct {
 	MaxBatchKB int `toml:"max-batch-kb"`
 
 	// Maximum delay between retry attempts.
-	// The format used is the same seen in time.ParseDuration (Default 10s)
+	// The format used is the same seen in time.ParseDuration (Default 1s)
 	MaxDelayInterval string `toml:"max-delay-interval"`
+
+	// Maximum retry attempts.
+	MaxRetries int `toml:"max-retries"`
 
 	// Skip TLS verification in order to use self signed certificate.
 	// WARNING: It's insecure. Use it only for developing and don't use in production.
