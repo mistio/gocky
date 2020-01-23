@@ -2,10 +2,10 @@ package main
 
 import (
 	"flag"
-	"fmt"
-	"log"
 	"os"
 	"os/signal"
+
+	log "github.com/golang/glog"
 
 	"github.com/mistio/gocky/relay"
 )
@@ -18,14 +18,12 @@ func main() {
 	flag.Parse()
 
 	if *configFile == "" {
-		fmt.Fprintln(os.Stderr, "Missing configuration file")
-		flag.PrintDefaults()
-		os.Exit(1)
+		log.Fatal("Missing configuration file")
 	}
 
 	cfg, err := relay.LoadConfigFile(*configFile)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Problem loading config file:", err)
+		log.Error("Problem loading config file:", err)
 	}
 
 	r, err := relay.New(cfg)
@@ -41,6 +39,6 @@ func main() {
 		r.Stop()
 	}()
 
-	log.Println("starting relays...")
+	log.Info("starting relays...")
 	r.Run()
 }
