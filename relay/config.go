@@ -66,6 +66,9 @@ type HTTPOutputConfig struct {
 	// Maximum batch size in KB (Default 512)
 	MaxBatchKB int `toml:"max-batch-kb"`
 
+	// Batch size in metrics (Default 10, only for fdb) (e.g. 10 metrics per batch)
+	BatchSizeMetrics int `toml:"batch-size-metrics"`
+
 	// Maximum delay between retry attempts.
 	// The format used is the same seen in time.ParseDuration (Default 1s)
 	MaxDelayInterval string `toml:"max-delay-interval"`

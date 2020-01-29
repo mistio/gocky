@@ -53,6 +53,7 @@ const (
 	DefaultMaxDelayInterval = 1 // in seconds
 	DefaultBatchSizeKB      = 512
 	DefaultMaxRetries       = 3
+	DefaultBatchSizeMetrics = 10
 
 	KB = 1024
 	MB = 1024 * KB
@@ -512,11 +513,12 @@ func (b *simplePoster) post(buf []byte, query string, auth string) (*responseDat
 
 type httpBackend struct {
 	poster
-	name        string
-	backendType string
-	location    string
-	failOnError bool
-	db          *fdb.Database
+	name             string
+	backendType      string
+	location         string
+	failOnError      bool
+	batchSizeMetrics int
+	db               *fdb.Database
 }
 
 func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
@@ -531,6 +533,11 @@ func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
 			return nil, fmt.Errorf("error parsing HTTP timeout '%v'", err)
 		}
 		timeout = t
+	}
+
+	batchSizeMetrics := DefaultBatchSizeMetrics
+	if cfg.BatchSizeMetrics > 0 {
+		batchSizeMetrics = cfg.BatchSizeMetrics
 	}
 
 	if cfg.BackendType == "influxdb" {
@@ -557,22 +564,24 @@ func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
 		}
 
 		return &httpBackend{
-			poster:      p,
-			name:        cfg.Name,
-			backendType: cfg.BackendType,
-			location:    "",
-			failOnError: cfg.FailOnError,
-			db:          nil,
+			poster:           p,
+			name:             cfg.Name,
+			backendType:      cfg.BackendType,
+			location:         "",
+			failOnError:      cfg.FailOnError,
+			batchSizeMetrics: batchSizeMetrics,
+			db:               nil,
 		}, nil
 	} else if cfg.BackendType == "graphite" {
 
 		return &httpBackend{
-			poster:      nil,
-			name:        cfg.Name,
-			backendType: cfg.BackendType,
-			location:    cfg.Location,
-			failOnError: cfg.FailOnError,
-			db:          nil,
+			poster:           nil,
+			name:             cfg.Name,
+			backendType:      cfg.BackendType,
+			location:         cfg.Location,
+			failOnError:      cfg.FailOnError,
+			batchSizeMetrics: batchSizeMetrics,
+			db:               nil,
 		}, nil
 	} else if cfg.BackendType == "fdb" {
 
@@ -586,12 +595,13 @@ func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
 		db.Options().SetTransactionRetryLimit(DefaultMaxRetries)
 
 		return &httpBackend{
-			poster:      nil,
-			name:        cfg.Name,
-			backendType: cfg.BackendType,
-			location:    cfg.Location,
-			failOnError: cfg.FailOnError,
-			db:          &db,
+			poster:           nil,
+			name:             cfg.Name,
+			backendType:      cfg.BackendType,
+			location:         cfg.Location,
+			failOnError:      cfg.FailOnError,
+			batchSizeMetrics: batchSizeMetrics,
+			db:               &db,
 		}, nil
 	} else {
 		return nil, fmt.Errorf("Unknown backend type '%v'", cfg.BackendType)

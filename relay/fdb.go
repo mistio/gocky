@@ -599,46 +599,61 @@ func pushToFdb(points []models.Point, machineID string, h *HTTP, backend *httpBa
 		push = false
 	}
 
-	_, err = backend.db.Transact(func(tr fdb.Transaction) (ret interface{}, err error) {
-		for _, point := range points {
-			metric := parseMeasurementAndTags(point)
+	batches := len(points) / backend.batchSizeMetrics
+	if len(points)%backend.batchSizeMetrics > 0 {
+		batches++
+	}
+	start := 0
+	end := backend.batchSizeMetrics
+	if end > len(points) {
+		end = len(points)
+	}
 
-			var secondValue []byte
-			iter := point.FieldIterator()
-			for iter.Next() {
-				secondValue, err = createSecondValue(iter)
-				if err != nil {
-					return nil, err
-				}
-				if secondValue == nil {
-					continue
-				}
-				if iter.Type() == models.Float || iter.Type() == models.Integer || iter.Type() == models.Unsigned {
-					resolutions := []string{"minute", "hour", "day"}
-					for _, resolution := range resolutions {
-						applySummarization(tr, monitoring, machineID, metric, iter, point, resolution)
+	for i := 0; i < batches; i++ {
+		_, err = backend.db.Transact(func(tr fdb.Transaction) (ret interface{}, err error) {
+			for j := start; j < end; j++ {
+				metric := parseMeasurementAndTags(points[j])
+				var secondValue []byte
+				iter := points[j].FieldIterator()
+				for iter.Next() {
+					secondValue, err = createSecondValue(iter)
+					if err != nil {
+						return nil, err
 					}
-				}
-				tr.Set(monitoring.Pack(createKeyTupleSecond(machineID, metric, iter, point)), []byte(secondValue))
+					if secondValue == nil {
+						continue
+					}
+					if iter.Type() == models.Float || iter.Type() == models.Integer || iter.Type() == models.Unsigned {
+						resolutions := []string{"minute", "hour", "day"}
+						for _, resolution := range resolutions {
+							applySummarization(tr, monitoring, machineID, metric, iter, points[j], resolution)
+						}
+					}
+					tr.Set(monitoring.Pack(createKeyTupleSecond(machineID, metric, iter, points[j])), []byte(secondValue))
 
-				// Update available metrics at specific time intervals
-				if push {
-					metricExists := tr.Get(availableMetrics.Pack(tuple.Tuple{machineID, iter.Type().String(),
-						metric, string(iter.FieldKey())})).MustGet()
-					if metricExists == nil {
-						tr.Set(availableMetrics.Pack(tuple.Tuple{machineID, iter.Type().String(),
-							metric, string(iter.FieldKey())}), []byte(tuple.Tuple{""}.Pack()))
+					// Update available metrics at specific time intervals
+					if push {
+						metricExists := tr.Get(availableMetrics.Pack(tuple.Tuple{machineID, iter.Type().String(),
+							metric, string(iter.FieldKey())})).MustGet()
+						if metricExists == nil {
+							tr.Set(availableMetrics.Pack(tuple.Tuple{machineID, iter.Type().String(),
+								metric, string(iter.FieldKey())}), []byte(tuple.Tuple{""}.Pack()))
+						}
 					}
 				}
 			}
+			return nil, nil
+		})
+		if err != nil {
+			log.Printf("Insertion failed at %v\n", backend.name)
+			log.Printf("Cause of: %v\n", err)
+			return nil, err
 		}
-		return nil, nil
-	})
-
-	if err != nil {
-		log.Printf("Insertion failed at %v\n", backend.name)
-		log.Printf("Cause of: %v\n", err)
-		return nil, err
+		start = end
+		end = end + backend.batchSizeMetrics
+		if end > len(points) {
+			end = len(points)
+		}
 	}
 
 	return &responseData{
