@@ -235,7 +235,6 @@ func (f *FdbRelay) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	log.Printf("=================START========================\n")
 	log.Println(machineID)
 	for _, point := range points {
 
@@ -250,7 +249,6 @@ func (f *FdbRelay) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 		log.Println(strconv.Itoa(point.Time().Year()), strconv.Itoa(int(point.Time().Month())), strconv.Itoa(point.Time().Day()),
 			strconv.Itoa(point.Time().Hour()), strconv.Itoa(point.Time().Minute()), strconv.Itoa(point.Time().Second()))*/
 	}
-	log.Printf("=================END========================\n")
 
 	// handle data points
 
