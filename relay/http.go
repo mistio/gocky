@@ -513,12 +513,13 @@ func (b *simplePoster) post(buf []byte, query string, auth string) (*responseDat
 
 type httpBackend struct {
 	poster
-	name             string
-	backendType      string
-	location         string
-	failOnError      bool
-	batchSizeMetrics int
-	db               *fdb.Database
+	name               string
+	backendType        string
+	location           string
+	failOnError        bool
+	batchSizeMetrics   int
+	disableAggregation bool
+	db                 *fdb.Database
 }
 
 func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
@@ -564,24 +565,26 @@ func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
 		}
 
 		return &httpBackend{
-			poster:           p,
-			name:             cfg.Name,
-			backendType:      cfg.BackendType,
-			location:         "",
-			failOnError:      cfg.FailOnError,
-			batchSizeMetrics: batchSizeMetrics,
-			db:               nil,
+			poster:             p,
+			name:               cfg.Name,
+			backendType:        cfg.BackendType,
+			location:           "",
+			failOnError:        cfg.FailOnError,
+			batchSizeMetrics:   batchSizeMetrics,
+			disableAggregation: cfg.DisableAggregation,
+			db:                 nil,
 		}, nil
 	} else if cfg.BackendType == "graphite" {
 
 		return &httpBackend{
-			poster:           nil,
-			name:             cfg.Name,
-			backendType:      cfg.BackendType,
-			location:         cfg.Location,
-			failOnError:      cfg.FailOnError,
-			batchSizeMetrics: batchSizeMetrics,
-			db:               nil,
+			poster:             nil,
+			name:               cfg.Name,
+			backendType:        cfg.BackendType,
+			location:           cfg.Location,
+			failOnError:        cfg.FailOnError,
+			batchSizeMetrics:   batchSizeMetrics,
+			disableAggregation: cfg.DisableAggregation,
+			db:                 nil,
 		}, nil
 	} else if cfg.BackendType == "fdb" {
 
@@ -595,13 +598,14 @@ func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
 		db.Options().SetTransactionRetryLimit(DefaultMaxRetries)
 
 		return &httpBackend{
-			poster:           nil,
-			name:             cfg.Name,
-			backendType:      cfg.BackendType,
-			location:         cfg.Location,
-			failOnError:      cfg.FailOnError,
-			batchSizeMetrics: batchSizeMetrics,
-			db:               &db,
+			poster:             nil,
+			name:               cfg.Name,
+			backendType:        cfg.BackendType,
+			location:           cfg.Location,
+			failOnError:        cfg.FailOnError,
+			batchSizeMetrics:   batchSizeMetrics,
+			disableAggregation: cfg.DisableAggregation,
+			db:                 &db,
 		}, nil
 	} else {
 		return nil, fmt.Errorf("Unknown backend type '%v'", cfg.BackendType)

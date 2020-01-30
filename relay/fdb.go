@@ -621,10 +621,12 @@ func pushToFdb(points []models.Point, machineID string, h *HTTP, backend *httpBa
 					if secondValue == nil {
 						continue
 					}
-					if iter.Type() == models.Float || iter.Type() == models.Integer || iter.Type() == models.Unsigned {
-						resolutions := []string{"minute", "hour", "day"}
-						for _, resolution := range resolutions {
-							applySummarization(tr, monitoring, machineID, metric, iter, points[j], resolution)
+					if !backend.disableAggregation {
+						if iter.Type() == models.Float || iter.Type() == models.Integer || iter.Type() == models.Unsigned {
+							resolutions := []string{"minute", "hour", "day"}
+							for _, resolution := range resolutions {
+								applySummarization(tr, monitoring, machineID, metric, iter, points[j], resolution)
+							}
 						}
 					}
 					tr.Set(monitoring.Pack(createKeyTupleSecond(machineID, metric, iter, points[j])), []byte(secondValue))
