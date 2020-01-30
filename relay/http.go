@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -49,8 +50,8 @@ type HTTP struct {
 }
 
 const (
-	DefaultHTTPTimeout      = 1 // in seconds
-	DefaultMaxDelayInterval = 1 // in seconds
+	DefaultHTTPTimeout      = 5 * time.Second
+	DefaultMaxDelayInterval = 1 * time.Second
 	DefaultBatchSizeKB      = 512
 	DefaultMaxRetries       = 3
 	DefaultBatchSizeMetrics = 10
@@ -519,6 +520,8 @@ type httpBackend struct {
 	failOnError        bool
 	batchSizeMetrics   int
 	disableAggregation bool
+	maxRetries         int
+	maxDelayInterval   time.Duration
 	db                 *fdb.Database
 }
 
@@ -527,7 +530,7 @@ func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
 		cfg.Name = cfg.Location
 	}
 
-	timeout := DefaultHTTPTimeout * time.Second
+	timeout := DefaultHTTPTimeout
 	if cfg.Timeout != "" {
 		t, err := time.ParseDuration(cfg.Timeout)
 		if err != nil {
@@ -536,9 +539,23 @@ func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
 		timeout = t
 	}
 
+	maxRetries := DefaultMaxRetries
+	if cfg.MaxRetries > 0 {
+		maxRetries = cfg.MaxRetries
+	}
+
 	batchSizeMetrics := DefaultBatchSizeMetrics
 	if cfg.BatchSizeMetrics > 0 {
 		batchSizeMetrics = cfg.BatchSizeMetrics
+	}
+
+	maxDelayInterval := DefaultMaxDelayInterval
+	if cfg.MaxDelayInterval != "" {
+		m, err := time.ParseDuration(cfg.MaxDelayInterval)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing max delay interval %v", err)
+		}
+		maxDelayInterval = m
 	}
 
 	if cfg.BackendType == "influxdb" {
@@ -547,21 +564,11 @@ func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
 		// If configured, create a retryBuffer per backend.
 		// This way we serialize retries against each backend.
 		if cfg.BufferSizeMB > 0 {
-			max := DefaultMaxDelayInterval * time.Second
-			if cfg.MaxDelayInterval != "" {
-				m, err := time.ParseDuration(cfg.MaxDelayInterval)
-				if err != nil {
-					return nil, fmt.Errorf("error parsing max retry time %v", err)
-				}
-				max = m
-			}
-
 			batch := DefaultBatchSizeKB * KB
 			if cfg.MaxBatchKB > 0 {
 				batch = cfg.MaxBatchKB * KB
 			}
-
-			p = newRetryBuffer(cfg.BufferSizeMB*MB, batch, max, p)
+			p = newRetryBuffer(cfg.BufferSizeMB*MB, batch, maxDelayInterval, p)
 		}
 
 		return &httpBackend{
@@ -572,6 +579,8 @@ func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
 			failOnError:        cfg.FailOnError,
 			batchSizeMetrics:   batchSizeMetrics,
 			disableAggregation: cfg.DisableAggregation,
+			maxRetries:         maxRetries,
+			maxDelayInterval:   maxDelayInterval,
 			db:                 nil,
 		}, nil
 	} else if cfg.BackendType == "graphite" {
@@ -584,6 +593,8 @@ func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
 			failOnError:        cfg.FailOnError,
 			batchSizeMetrics:   batchSizeMetrics,
 			disableAggregation: cfg.DisableAggregation,
+			maxRetries:         maxRetries,
+			maxDelayInterval:   maxDelayInterval,
 			db:                 nil,
 		}, nil
 	} else if cfg.BackendType == "fdb" {
@@ -594,8 +605,9 @@ func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
 			return nil, err
 		}
 
-		db.Options().SetTransactionTimeout(DefaultHTTPTimeout * 1000)
-		db.Options().SetTransactionRetryLimit(DefaultMaxRetries)
+		// Set fdb timeout in ms
+		db.Options().SetTransactionTimeout(int64(math.Ceil(timeout.Seconds())) * 1000)
+		db.Options().SetTransactionRetryLimit(int64(maxRetries))
 
 		return &httpBackend{
 			poster:             nil,
@@ -605,6 +617,8 @@ func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
 			failOnError:        cfg.FailOnError,
 			batchSizeMetrics:   batchSizeMetrics,
 			disableAggregation: cfg.DisableAggregation,
+			maxRetries:         maxRetries,
+			maxDelayInterval:   maxDelayInterval,
 			db:                 &db,
 		}, nil
 	} else {
@@ -630,13 +644,13 @@ func putBuf(b *bytes.Buffer) {
 
 func pushToInfluxdb(b *httpBackend, buf []byte, query string, auth string) (*responseData, error) {
 	resp, err := b.post(buf, query, auth)
-	for i := 0; i < DefaultMaxRetries; i++ {
+	for i := 0; i < b.maxRetries; i++ {
 		if err == nil {
 			break
 		}
 		log.Println(err)
 		log.Printf("Retrying to send datapoints to influxdb backend: %s\n", b.location)
-		time.Sleep(DefaultHTTPTimeout * time.Second)
+		time.Sleep(b.maxDelayInterval)
 		resp, err = b.post(buf, query, auth)
 	}
 	return resp, err
