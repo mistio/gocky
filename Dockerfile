@@ -1,9 +1,9 @@
 FROM golang:1.13-buster
 
 RUN apt update && apt install -y build-essential && \
-    wget https://www.foundationdb.org/downloads/6.2.10/ubuntu/installers/foundationdb-clients_6.2.10-1_amd64.deb && \
-    dpkg -i foundationdb-clients_6.2.10-1_amd64.deb && \
-    rm foundationdb-clients_6.2.10-1_amd64.deb && \
+    wget https://www.foundationdb.org/downloads/6.2.11/ubuntu/installers/foundationdb-clients_6.2.11-1_amd64.deb && \
+    dpkg -i foundationdb-clients_6.2.11-1_amd64.deb && \
+    rm foundationdb-clients_6.2.11-1_amd64.deb && \
     rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /go/src/github.com/influxdata /go/src/github.com/apple /go/src/github.com/wavefronthq
