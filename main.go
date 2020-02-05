@@ -15,6 +15,7 @@ var (
 )
 
 func main() {
+	flag.Set("logtostderr", "true")
 	flag.Parse()
 
 	if *configFile == "" {
@@ -39,6 +40,6 @@ func main() {
 		r.Stop()
 	}()
 
-	log.Info("starting relays...")
+	log.Info("Starting relays...")
 	r.Run()
 }
