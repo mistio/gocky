@@ -4,13 +4,14 @@ import (
 	"compress/gzip"
 	"crypto/tls"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
+
+	log "github.com/golang/glog"
 
 	"github.com/influxdata/influxdb/models"
 	"github.com/influxdata/telegraf"
@@ -78,7 +79,7 @@ func (g *GraphiteRelay) Run() error {
 	}
 	g.l = l
 
-	log.Printf("Starting Graphite relay %q on %v", g.Name(), g.addr)
+	log.Infof("Starting Graphite relay %q on %v", g.Name(), g.addr)
 	err = http.Serve(l, g)
 	if atomic.LoadInt64(&g.closing) != 0 {
 		return nil
@@ -124,8 +125,8 @@ func NewGraphiteRelay(cfg GraphiteConfig) (Relay, error) {
 
 	if g.enableMetering && g.ampqURL == "" {
 		g.enableMetering = false
-		log.Println("You have to set AMQPUrl in config for metering to work")
-		log.Println("Disabling metering for now")
+		log.Warning("You have to set AMQPUrl in config for metering to work")
+		log.Warning("Disabling metering for now")
 	}
 
 	g.dropUnauthorized = cfg.DropUnauthorized
@@ -228,7 +229,7 @@ func (g *GraphiteRelay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		machineID = r.Header["X-Gocky-Tag-Machine-Id"][0]
 	} else {
 		if g.dropUnauthorized {
-			log.Println("Gocky Headers are missing. Dropping packages...")
+			log.Error("Gocky Headers are missing. Dropping packages...")
 			jsonError(w, http.StatusForbidden, "cannot find Gocky headers")
 			return
 		}
@@ -331,13 +332,16 @@ func pushToGraphite(points []models.Point, g *graphite.Graphite, machineID, sour
 		}
 
 		err := g.Write(graphiteMetrics)
+		if log.V(5) {
+			log.Infof("Sending datapoints to graphite backend: %s, from machine: %s", g.Servers[0], machineID)
+		}
 
 		for i := 0; i < 3; i++ {
 			if err == nil {
 				break
 			}
-			log.Println(err)
-			log.Printf("Retrying to send datapoints to graphite backend: %s\n", g.Servers[0])
+			log.Error(err)
+			log.Errorf("Retrying to send datapoints to graphite backend: %s, from machine: %s", g.Servers[0], machineID)
 			time.Sleep(1000 * time.Millisecond)
 			err = g.Write(graphiteMetrics)
 		}

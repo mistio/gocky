@@ -3,11 +3,12 @@ package relay
 import (
 	"bytes"
 	"errors"
-	"log"
 	"net"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	log "github.com/golang/glog"
 
 	"github.com/influxdata/influxdb/models"
 )
@@ -127,13 +128,13 @@ func (u *UDP) Run() error {
 		}
 	}()
 
-	log.Printf("Starting UDP relay %q on %v", u.Name(), u.l.LocalAddr())
+	log.Infof("Starting UDP relay %q on %v", u.Name(), u.l.LocalAddr())
 
 	for {
 		n, remote, err := u.l.ReadFromUDP(buf[:])
 		if err != nil {
 			if atomic.LoadInt64(&u.closing) == 0 {
-				log.Printf("Error reading packet in relay %q from %v: %v", u.name, remote, err)
+				log.Errorf("Error reading packet in relay %q from %v: %v", u.name, remote, err)
 			} else {
 				err = nil
 			}
@@ -162,7 +163,7 @@ func (u *UDP) Stop() error {
 func (u *UDP) post(p *packet) {
 	points, err := models.ParsePointsWithPrecision(p.data.Bytes(), p.timestamp, u.precision)
 	if err != nil {
-		log.Printf("Error parsing packet in relay %q from %v: %v", u.Name(), p.from, err)
+		log.Errorf("Error parsing packet in relay %q from %v: %v", u.Name(), p.from, err)
 		putUDPBuf(p.data)
 		return
 	}
@@ -181,13 +182,13 @@ func (u *UDP) post(p *packet) {
 
 	if err != nil {
 		putUDPBuf(out)
-		log.Printf("Error writing points in relay %q: %v", u.Name(), err)
+		log.Errorf("Error writing points in relay %q: %v", u.Name(), err)
 		return
 	}
 
 	for _, b := range u.backends {
 		if err := b.post(out.Bytes()); err != nil {
-			log.Printf("Error writing points in relay %q to backend %q: %v", u.Name(), b.name, err)
+			log.Errorf("Error writing points in relay %q to backend %q: %v", u.Name(), b.name, err)
 		}
 	}
 

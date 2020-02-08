@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"strconv"
@@ -15,6 +14,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	log "github.com/golang/glog"
 
 	"github.com/influxdata/influxdb/models"
 	"github.com/influxdata/telegraf/plugins/outputs/graphite"
@@ -74,7 +75,7 @@ func NewHTTP(cfg HTTPConfig) (Relay, error) {
 			return nil, err
 		}
 
-		log.Printf("New backend with type: %s\n", backend.backendType)
+		log.Infof("New backend with type: %s\n", backend.backendType)
 		h.backends = append(h.backends, backend)
 	}
 
@@ -84,8 +85,8 @@ func NewHTTP(cfg HTTPConfig) (Relay, error) {
 
 	if h.enableMetering && h.ampqURL == "" {
 		h.enableMetering = false
-		log.Println("You have to set AMQPUrl in config for metering to work")
-		log.Println("Disabling metering for now")
+		log.Warning("You have to set AMQPUrl in config for metering to work")
+		log.Warning("Disabling metering for now")
 	}
 
 	h.dropUnauthorized = cfg.DropUnauthorized
@@ -132,7 +133,7 @@ func (h *HTTP) Run() error {
 
 	h.l = l
 
-	log.Printf("Starting %s relay %q on %v", strings.ToUpper(h.schema), h.Name(), h.addr)
+	log.Infof("Starting %s relay %q on %v", strings.ToUpper(h.schema), h.Name(), h.addr)
 
 	err = http.Serve(l, h)
 	if atomic.LoadInt64(&h.closing) != 0 {
@@ -230,7 +231,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		machineID = r.Header["X-Gocky-Tag-Machine-Id"][0]
 	} else {
 		if h.dropUnauthorized {
-			log.Println("Gocky Headers are missing. Dropping packages...")
+			log.Error("Gocky Headers are missing. Dropping packages...")
 			jsonError(w, http.StatusForbidden, "cannot find Gocky headers")
 			return
 		}
@@ -297,7 +298,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			go func() {
 				defer wg.Done()
 				graphiteServers := make([]string, 1)
-				graphiteServers = append(graphiteServers, b.location)
+				graphiteServers[0] = b.location
 				graphiteClient := &graphite.Graphite{
 					Servers: graphiteServers,
 					Prefix:  "bucky",
@@ -320,7 +321,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}()
 		} else {
 			wg.Done()
-			log.Printf("Unkown backend type: %q posting to relay: %q with backend name: %q", b.backendType, h.Name(), b.name)
+			log.Errorf("Unknown backend type: %q posting to relay: %q with backend name: %q", b.backendType, h.Name(), b.name)
 		}
 
 	}
@@ -390,7 +391,7 @@ func (rd *responseData) HandleResponse(h *HTTP, w http.ResponseWriter, b *httpBa
 	}
 
 	if err != nil {
-		log.Printf("Problem posting to relay %q backend %q: %v", h.Name(), b.name, err)
+		log.Errorf("Problem posting to relay %q backend %q: %v", h.Name(), b.name, err)
 		return
 	}
 
@@ -403,7 +404,7 @@ func (rd *responseData) HandleResponse(h *HTTP, w http.ResponseWriter, b *httpBa
 		once.Do(onFirstUserError)
 
 	case 5:
-		log.Printf("5xx response for relay %q backend %q: %v", h.Name(), b.name, rd.StatusCode)
+		log.Errorf("5xx response for relay %q backend %q: %v", h.Name(), b.name, rd.StatusCode)
 	}
 	responses <- rd
 }
@@ -560,8 +561,8 @@ func pushToInfluxdb(b *httpBackend, buf []byte, query string, auth string) (*res
 		if err == nil {
 			break
 		}
-		log.Println(err)
-		log.Printf("Retrying to send datapoints to influxdb backend: %s\n", b.location)
+		log.Error(err)
+		log.Errorf("Retrying to send datapoints to influxdb backend: %s\n", b.location)
 		time.Sleep(1000 * time.Millisecond)
 		resp, err = b.post(buf, query, auth)
 	}
