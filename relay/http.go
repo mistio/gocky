@@ -161,6 +161,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if r.URL.Path != "/write" {
 		jsonError(w, http.StatusNotFound, "invalid write endpoint")
+		log.Error("Invalid write endpoint")
 		return
 	}
 
@@ -170,6 +171,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
 		} else {
 			jsonError(w, http.StatusMethodNotAllowed, "invalid write method")
+			log.Error("Invalid write method")
 		}
 		return
 	}
@@ -186,6 +188,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		b, err := gzip.NewReader(r.Body)
 		if err != nil {
 			jsonError(w, http.StatusBadRequest, "unable to decode gzip body")
+			log.Error("Unable to decode gzip body")
 		}
 		defer b.Close()
 		body = b
@@ -196,6 +199,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		putBuf(bodyBuf)
 		jsonError(w, http.StatusInternalServerError, "problem reading request body")
+		log.Error("Problem reading request body")
 		return
 	}
 
@@ -204,6 +208,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		putBuf(bodyBuf)
 		jsonError(w, http.StatusBadRequest, "unable to parse points")
+		log.Error("Unable to parse points")
 		return
 	}
 
@@ -223,6 +228,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		putBuf(outBuf)
 		jsonError(w, http.StatusInternalServerError, "problem writing points")
+		log.Error("Problem writing points")
 		return
 	}
 
@@ -287,6 +293,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// fail early if we're missing the database
 			if queryParams.Get("db") == "" {
 				jsonError(w, http.StatusBadRequest, "missing parameter: db")
+				log.Error("Missing parameter: db")
 				return
 			}
 			go func() {
@@ -313,6 +320,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				newPoints, err := models.ParsePointsWithPrecision(outBytes, start, precision)
 				if err != nil {
 					jsonError(w, http.StatusBadRequest, "unable to parse points")
+					log.Error("Unable to parse points")
 					return
 				}
 
@@ -353,6 +361,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if errResponse == nil {
 		// failed to make any valid request...
 		jsonError(w, http.StatusServiceUnavailable, "unable to write points")
+		log.Error("Unable to write points")
 		return
 	}
 
