@@ -314,7 +314,6 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				jsonError(w, http.StatusInternalServerError, "unable to connect to graphite")
 				log.Fatalf("Could not connect to graphite: %s", conErr)
 			}
-			defer wg.Done()
 			go func() {
 				newPoints, err := models.ParsePointsWithPrecision(outBytes, start, precision)
 				if err != nil {
@@ -332,6 +331,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				Body:            nil,
 			}
 			resp.HandleResponse(h, w, b, responses, &once, nil)
+			wg.Done()
 		} else {
 			wg.Done()
 			log.Errorf("Unknown backend type: %q posting to relay: %q with backend name: %q", b.backendType, h.Name(), b.name)
