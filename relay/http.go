@@ -314,16 +314,16 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				jsonError(w, http.StatusInternalServerError, "unable to connect to graphite")
 				log.Fatalf("Could not connect to graphite: %s", conErr)
 			}
-			go func() {
-				newPoints, err := models.ParsePointsWithPrecision(outBytes, start, precision)
-				if err != nil {
-					jsonError(w, http.StatusBadRequest, "unable to parse points")
-					log.Error("Unable to parse points")
-					return
-				}
 
-				pushToGraphite(newPoints, graphiteClient, machineID, sourceType)
-			}()
+			newPoints, err := models.ParsePointsWithPrecision(outBytes, start, precision)
+			if err != nil {
+				jsonError(w, http.StatusBadRequest, "unable to parse points")
+				log.Error("Unable to parse points")
+				return
+			}
+
+			go pushToGraphite(newPoints, graphiteClient, machineID, sourceType)
+
 			resp := &responseData{
 				ContentType:     "",
 				ContentEncoding: "",
