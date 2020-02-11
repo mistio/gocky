@@ -308,11 +308,9 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				log.Error("Unable to parse points")
 				return
 			}
-			go func() {
-				defer wg.Done()
-				resp, err := pushToGraphite(newPoints, b.graphiteClient, machineID, sourceType)
-				resp.HandleResponse(h, w, b, responses, &once, err)
-			}()
+			go pushToGraphite(newPoints, b.graphiteClient, machineID, sourceType)
+			w.WriteHeader(http.StatusNoContent)
+			wg.Done()
 		} else {
 			wg.Done()
 			log.Errorf("Unknown backend type: %q posting to relay: %q with backend name: %q", b.backendType, h.Name(), b.name)
