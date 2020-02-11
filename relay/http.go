@@ -302,39 +302,17 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				resp.HandleResponse(h, w, b, responses, &once, err)
 			}()
 		} else if b.backendType == "graphite" {
-			graphiteServers := make([]string, 1)
-			graphiteServers[0] = b.location
-			graphiteClient := &graphite.Graphite{
-				Servers: graphiteServers,
-				Prefix:  "bucky",
-			}
-
-			conErr := graphiteClient.Connect()
-			if conErr != nil {
-				jsonError(w, http.StatusInternalServerError, "unable to connect to graphite")
-				log.Fatalf("Could not connect to graphite: %s", conErr)
-			}
-
 			newPoints, err := models.ParsePointsWithPrecision(outBytes, start, precision)
 			if err != nil {
 				jsonError(w, http.StatusBadRequest, "unable to parse points")
 				log.Error("Unable to parse points")
 				return
 			}
-
-			go pushToGraphite(newPoints, graphiteClient, machineID, sourceType)
-
-			/*resp := &responseData{
-				ContentType:     "",
-				ContentEncoding: "",
-				StatusCode:      200,
-				Body:            nil,
-			}
-			resp.HandleResponse(h, w, b, responses, &once, nil)*/
-
-			w.WriteHeader(http.StatusNoContent)
-
-			wg.Done()
+			go func() {
+				defer wg.Done()
+				resp, err := pushToGraphite(newPoints, b.graphiteClient, machineID, sourceType)
+				resp.HandleResponse(h, w, b, responses, &once, err)
+			}()
 		} else {
 			wg.Done()
 			log.Errorf("Unknown backend type: %q posting to relay: %q with backend name: %q", b.backendType, h.Name(), b.name)
@@ -498,9 +476,10 @@ func (b *simplePoster) post(buf []byte, query string, auth string) (*responseDat
 
 type httpBackend struct {
 	poster
-	name        string
-	backendType string
-	location    string
+	graphiteClient *graphite.Graphite
+	name           string
+	backendType    string
+	location       string
 }
 
 func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
@@ -541,18 +520,32 @@ func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
 		}
 
 		return &httpBackend{
-			poster:      p,
-			name:        cfg.Name,
-			backendType: cfg.BackendType,
-			location:    "",
+			poster:         p,
+			graphiteClient: nil,
+			name:           cfg.Name,
+			backendType:    cfg.BackendType,
+			location:       "",
 		}, nil
 	}
 
+	graphiteServers := make([]string, 1)
+	graphiteServers[0] = cfg.Location
+	graphiteClient := &graphite.Graphite{
+		Servers: graphiteServers,
+		Prefix:  "bucky",
+	}
+
+	conErr := graphiteClient.Connect()
+	if conErr != nil {
+		log.Fatalf("Could not connect to graphite: %s", conErr)
+	}
+
 	return &httpBackend{
-		poster:      nil,
-		name:        cfg.Name,
-		backendType: cfg.BackendType,
-		location:    cfg.Location,
+		poster:         nil,
+		graphiteClient: graphiteClient,
+		name:           cfg.Name,
+		backendType:    cfg.BackendType,
+		location:       cfg.Location,
 	}, nil
 }
 
