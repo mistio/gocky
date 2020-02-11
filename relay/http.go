@@ -324,13 +324,16 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 			go pushToGraphite(newPoints, graphiteClient, machineID, sourceType)
 
-			resp := &responseData{
+			/*resp := &responseData{
 				ContentType:     "",
 				ContentEncoding: "",
 				StatusCode:      200,
 				Body:            nil,
 			}
-			resp.HandleResponse(h, w, b, responses, &once, nil)
+			resp.HandleResponse(h, w, b, responses, &once, nil)*/
+
+			w.WriteHeader(http.StatusNoContent)
+
 			wg.Done()
 		} else {
 			wg.Done()
@@ -345,7 +348,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		putBuf(outBuf)
 	}()
 
-	var errResponse *responseData
+	//var errResponse *responseData
 
 	for resp := range responses {
 		switch resp.StatusCode / 100 {
@@ -358,11 +361,11 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		default:
 			// hold on to one of the responses to return back to the client
-			errResponse = resp
+			//errResponse = resp
 		}
 	}
 
-	// no successful writes
+	/*// no successful writes
 	if errResponse == nil {
 		// failed to make any valid request...
 		jsonError(w, http.StatusServiceUnavailable, "unable to write points")
@@ -370,7 +373,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errResponse.Write(w)
+	errResponse.Write(w)*/
 }
 
 type responseData struct {
