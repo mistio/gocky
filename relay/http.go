@@ -222,9 +222,6 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// done with the input points
-	putBuf(bodyBuf)
-
 	if err != nil {
 		putBuf(outBuf)
 		jsonError(w, http.StatusInternalServerError, "problem writing points")
@@ -287,6 +284,16 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var responses = make(chan *responseData, len(h.backends))
 
+	graphiteBackend := false
+
+	for _, b := range h.backends {
+		if b.backendType == "graphite" {
+			graphiteBackend = true
+			w.WriteHeader(204)
+			break
+		}
+	}
+
 	for _, b := range h.backends {
 		b := b
 		if b.backendType == "influxdb" {
@@ -299,34 +306,32 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			go func() {
 				defer wg.Done()
 				resp, err := pushToInfluxdb(b, outBytes, query, authHeader)
-				resp.HandleResponse(h, w, b, responses, &once, err)
+				if !graphiteBackend {
+					resp.HandleResponse(h, w, b, responses, &once, err)
+				}
 			}()
 		} else if b.backendType == "graphite" {
-			go func() {
-				defer wg.Done()
-				graphiteServers := make([]string, 1)
-				graphiteServers[0] = b.location
-				graphiteClient := &graphite.Graphite{
-					Servers: graphiteServers,
-					Prefix:  "bucky",
-				}
+			graphiteServers := make([]string, 1)
+			graphiteServers[0] = b.location
+			graphiteClient := &graphite.Graphite{
+				Servers: graphiteServers,
+				Prefix:  "bucky",
+			}
 
-				conErr := graphiteClient.Connect()
-				if conErr != nil {
-					jsonError(w, http.StatusInternalServerError, "unable to connect to graphite")
-					log.Fatalf("Could not connect to graphite: %s", conErr)
-				}
+			conErr := graphiteClient.Connect()
+			if conErr != nil {
+				jsonError(w, http.StatusInternalServerError, "unable to connect to graphite")
+				log.Fatalf("Could not connect to graphite: %s", conErr)
+			}
 
-				newPoints, err := models.ParsePointsWithPrecision(outBytes, start, precision)
-				if err != nil {
-					jsonError(w, http.StatusBadRequest, "unable to parse points")
-					log.Error("Unable to parse points")
-					return
-				}
-
-				resp, err := pushToGraphite(newPoints, graphiteClient, machineID, sourceType)
-				resp.HandleResponse(h, w, b, responses, &once, err)
-			}()
+			newPoints, err := models.ParsePointsWithPrecision(bodyBuf.Bytes(), start, precision)
+			if err != nil {
+				jsonError(w, http.StatusBadRequest, "unable to parse points")
+				log.Error("Unable to parse points")
+				return
+			}
+			go pushToGraphite(newPoints, graphiteClient, machineID, sourceType)
+			wg.Done()
 		} else {
 			wg.Done()
 			log.Errorf("Unknown backend type: %q posting to relay: %q with backend name: %q", b.backendType, h.Name(), b.name)
@@ -356,16 +361,17 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			errResponse = resp
 		}
 	}
+	if !graphiteBackend {
+		// no successful writes
+		if errResponse == nil {
+			// failed to make any valid request...
+			jsonError(w, http.StatusServiceUnavailable, "unable to write points")
+			log.Error("Unable to write points")
+			return
+		}
 
-	// no successful writes
-	if errResponse == nil {
-		// failed to make any valid request...
-		jsonError(w, http.StatusServiceUnavailable, "unable to write points")
-		log.Error("Unable to write points")
-		return
+		errResponse.Write(w)
 	}
-
-	errResponse.Write(w)
 }
 
 type responseData struct {
