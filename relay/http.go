@@ -212,22 +212,66 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	outBuf := getBuf()
+	metricsPerRequest := 100
+	metricsLeft := metricsPerRequest
+	linesToSend := ""
+
+	var outBytes [][]byte
+
 	for _, p := range points {
-		if _, err = outBuf.WriteString(p.PrecisionString(precision)); err != nil {
+		lineArray := strings.Split(p.PrecisionString(precision), " ")
+		measurementAndTags, fields, timestamp := lineArray[0], strings.Split(lineArray[1], ","), lineArray[2]
+		newLine := measurementAndTags + " "
+
+		for _, field := range fields {
+			if metricsLeft > 0 {
+				newLine += field + ","
+				metricsLeft--
+			} else {
+				newLine = strings.TrimSuffix(newLine, ",") + " " + timestamp + "\n"
+				fmt.Printf("%s", linesToSend+newLine)
+				outBytes = append(outBytes, []byte(linesToSend+newLine))
+				linesToSend = ""
+				metricsLeft = metricsPerRequest
+				newLine = measurementAndTags + " " + field + ","
+				metricsLeft--
+			}
+		}
+
+		if metricsLeft < metricsPerRequest {
+			newLine = strings.TrimSuffix(newLine, ",") + " " + timestamp + "\n"
+			linesToSend += newLine
+		}
+
+		if metricsLeft == 0 {
+			fmt.Printf("%s", linesToSend)
+			outBytes = append(outBytes, []byte(linesToSend))
+			linesToSend = ""
+			metricsLeft = metricsPerRequest
+		}
+
+		/*if _, err = outBuf.WriteString(p.PrecisionString(precision)); err != nil {
 			break
 		}
+
 		if err = outBuf.WriteByte('\n'); err != nil {
 			break
-		}
+		}*/
 	}
 
-	if err != nil {
-		putBuf(outBuf)
+	if len(linesToSend) > 0 {
+		fmt.Printf("%s", linesToSend)
+		outBytes = append(outBytes, []byte(linesToSend))
+	}
+
+	/*if err != nil {
+		for _, outByte := range outBytes {
+			putBuf(outByte)
+		}
 		jsonError(w, http.StatusInternalServerError, "problem writing points")
 		log.Error("Problem writing points")
 		return
-	}
+	}*/
 
 	machineID := ""
 	if r.Header["X-Gocky-Tag-Machine-Id"] != nil {
@@ -272,17 +316,25 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// normalize query string
 	query := queryParams.Encode()
 
-	outBytes := outBuf.Bytes()
+	//outBytes := outBuf.Bytes()
 
 	// check for authorization performed via the header
 	authHeader := r.Header.Get("Authorization")
 
+	influxdbBackends := 0
+
+	for _, b := range h.backends {
+		if b.backendType == "influxdb" {
+			influxdbBackends++
+		}
+	}
+
 	var wg sync.WaitGroup
-	wg.Add(len(h.backends))
+	wg.Add(len(h.backends) - influxdbBackends + influxdbBackends*len(outBytes))
 
 	var once sync.Once
 
-	var responses = make(chan *responseData, len(h.backends))
+	var responses = make(chan *responseData, len(h.backends)-influxdbBackends+influxdbBackends*len(outBytes))
 
 	graphiteBackend := false
 
@@ -303,13 +355,15 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				log.Error("Missing parameter: db")
 				return
 			}
-			go func() {
-				defer wg.Done()
-				resp, err := pushToInfluxdb(b, outBytes, query, authHeader)
-				if !graphiteBackend {
-					resp.HandleResponse(h, w, b, responses, &once, err)
-				}
-			}()
+			for _, outByte := range outBytes {
+				go func() {
+					defer wg.Done()
+					resp, err := pushToInfluxdb(b, outByte, query, authHeader)
+					if !graphiteBackend {
+						resp.HandleResponse(h, w, b, responses, &once, err)
+					}
+				}()
+			}
 		} else if b.backendType == "graphite" {
 			graphiteServers := make([]string, 1)
 			graphiteServers[0] = b.location
@@ -342,7 +396,9 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		wg.Wait()
 		close(responses)
-		putBuf(outBuf)
+		/*for _, outByte := range outBytes {
+			putBuf(outByte)
+		}*/
 	}()
 
 	var errResponse *responseData
