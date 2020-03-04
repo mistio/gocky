@@ -14,6 +14,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	log "github.com/golang/glog"
 
@@ -53,6 +54,8 @@ const (
 
 	KB = 1024
 	MB = 1024 * KB
+
+	MetricsPerRequest = 100
 )
 
 func NewHTTP(cfg HTTPConfig) (Relay, error) {
@@ -212,42 +215,67 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	metricsPerRequest := 100
-	metricsLeft := metricsPerRequest
+	metricsLeft := MetricsPerRequest
 	linesToSend := ""
 
-	var outBytes [][]byte
+	outBytes := [][]byte{}
 
 	for _, p := range points {
-		lineArray := strings.Split(p.PrecisionString(precision), " ")
-		measurementAndTags, fields, timestamp := lineArray[0], strings.Split(lineArray[1], ","), lineArray[2]
-		newLine := measurementAndTags + " "
 
-		for _, field := range fields {
+		f := p.FieldIterator()
+		measurementAndTags := string(p.Key())
+		newLine := measurementAndTags + " "
+		field := ""
+		numOfTags := 0
+
+		for f.Next() {
+			switch f.Type() {
+			case models.Float:
+				v, _ := f.FloatValue()
+				if utf8.ValidString(string(f.FieldKey())) {
+					field = string(f.FieldKey()) + "=" + strconv.FormatFloat(v, 'E', -1, 64)
+				} else {
+					continue
+				}
+			case models.Integer:
+				v, _ := f.IntegerValue()
+				if utf8.ValidString(string(f.FieldKey())) {
+					field = string(f.FieldKey()) + "=" + strconv.FormatInt(v, 10)
+				} else {
+					continue
+				}
+			default:
+				continue
+			}
+
 			if metricsLeft > 0 {
 				newLine += field + ","
 				metricsLeft--
 			} else {
-				newLine = strings.TrimSuffix(newLine, ",") + " " + timestamp + "\n"
-				fmt.Printf("%s", linesToSend+newLine)
+				newLine = strings.TrimSuffix(newLine, ",") + " " + strconv.FormatInt(p.UnixNano(), 10) + "\n"
 				outBytes = append(outBytes, []byte(linesToSend+newLine))
 				linesToSend = ""
-				metricsLeft = metricsPerRequest
+				metricsLeft = MetricsPerRequest
 				newLine = measurementAndTags + " " + field + ","
 				metricsLeft--
 			}
+
+			numOfTags++
 		}
 
-		if metricsLeft < metricsPerRequest {
-			newLine = strings.TrimSuffix(newLine, ",") + " " + timestamp + "\n"
+		if numOfTags == 0 {
+			continue
+		}
+
+		if metricsLeft < MetricsPerRequest {
+			newLine = strings.TrimSuffix(newLine, ",") + " " + strconv.FormatInt(p.UnixNano(), 10) + "\n"
 			linesToSend += newLine
 		}
 
 		if metricsLeft == 0 {
-			fmt.Printf("%s", linesToSend)
 			outBytes = append(outBytes, []byte(linesToSend))
 			linesToSend = ""
-			metricsLeft = metricsPerRequest
+			metricsLeft = MetricsPerRequest
 		}
 
 		/*if _, err = outBuf.WriteString(p.PrecisionString(precision)); err != nil {
@@ -260,7 +288,6 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(linesToSend) > 0 {
-		fmt.Printf("%s", linesToSend)
 		outBytes = append(outBytes, []byte(linesToSend))
 	}
 
@@ -355,7 +382,8 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				log.Error("Missing parameter: db")
 				return
 			}
-			for _, outByte := range outBytes {
+			for i := range outBytes {
+				outByte := outBytes[i]
 				go func() {
 					defer wg.Done()
 					resp, err := pushToInfluxdb(b, outByte, query, authHeader)
