@@ -226,7 +226,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		measurementAndTags := string(p.Key())
 		newLine := measurementAndTags + " "
 		field := ""
-		numOfTags := 0
+		numOfFields := 0
 
 		for f.Next() {
 			switch f.Type() {
@@ -260,10 +260,10 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				metricsLeft--
 			}
 
-			numOfTags++
+			numOfFields++
 		}
 
-		if numOfTags == 0 {
+		if numOfFields == 0 {
 			continue
 		}
 
