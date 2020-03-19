@@ -44,6 +44,10 @@ type HTTP struct {
 	cronJob      *cron.Cron
 	cronSchedule string
 
+	maxAcceptedRequest int
+	splitRequest int
+	itsAllGoodMan bool
+
 	backends []*httpBackend
 }
 
@@ -55,7 +59,6 @@ const (
 	KB = 1024
 	MB = 1024 * KB
 
-	MetricsPerRequest = 100
 )
 
 func NewHTTP(cfg HTTPConfig) (Relay, error) {
@@ -99,6 +102,15 @@ func NewHTTP(cfg HTTPConfig) (Relay, error) {
 	if h.cronSchedule != "" {
 		h.cronJob = cron.New()
 	}
+
+	h.maxAcceptedRequest = cfg.MaxAcceptedRequest
+	if cfg.SplitRequest == 0 {
+		// Use maxint if we don't want to split
+		h.splitRequest = int(^uint(0) >> 1)
+	} else {
+		h.splitRequest = cfg.SplitRequest
+	}
+	h.itsAllGoodMan = cfg.ItsAllGoodMan
 
 	return h, nil
 }
@@ -215,10 +227,13 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	metricsLeft := MetricsPerRequest
+	metricsLeft := h.splitRequest
+
 	linesToSend := ""
 
 	outBytes := [][]byte{}
+
+	totalMetrics := 0
 
 	for _, p := range points {
 
@@ -255,7 +270,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				newLine = strings.TrimSuffix(newLine, ",") + " " + strconv.FormatInt(p.UnixNano(), 10) + "\n"
 				outBytes = append(outBytes, []byte(linesToSend+newLine))
 				linesToSend = ""
-				metricsLeft = MetricsPerRequest
+				metricsLeft = h.splitRequest
 				newLine = measurementAndTags + " " + field + ","
 				metricsLeft--
 			}
@@ -267,7 +282,9 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		if metricsLeft < MetricsPerRequest {
+		totalMetrics += numOfFields
+
+		if metricsLeft < h.splitRequest {
 			newLine = strings.TrimSuffix(newLine, ",") + " " + strconv.FormatInt(p.UnixNano(), 10) + "\n"
 			linesToSend += newLine
 		}
@@ -275,7 +292,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if metricsLeft == 0 {
 			outBytes = append(outBytes, []byte(linesToSend))
 			linesToSend = ""
-			metricsLeft = MetricsPerRequest
+			metricsLeft = h.splitRequest
 		}
 
 		/*if _, err = outBuf.WriteString(p.PrecisionString(precision)); err != nil {
@@ -289,6 +306,12 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if len(linesToSend) > 0 {
 		outBytes = append(outBytes, []byte(linesToSend))
+	}
+
+	if h.maxAcceptedRequest > 0 && totalMetrics > h.maxAcceptedRequest {
+		log.Error("Payload too large...")
+		jsonError(w, 413, "payload too large")
+		return
 	}
 
 	/*if err != nil {
@@ -365,11 +388,16 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	graphiteBackend := false
 
-	for _, b := range h.backends {
-		if b.backendType == "graphite" {
-			graphiteBackend = true
-			w.WriteHeader(204)
-			break
+	if h.itsAllGoodMan {
+		graphiteBackend = true
+		w.WriteHeader(204)
+	} else {
+		for _, b := range h.backends {
+			if b.backendType == "graphite" {
+				graphiteBackend = true
+				w.WriteHeader(204)
+				break
+			}
 		}
 	}
 

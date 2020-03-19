@@ -38,6 +38,15 @@ type HTTPConfig struct {
 
 	CronSchedule string `toml:"cron-schedule"`
 
+	// Max allowed request in number of metrics (0 = Accept all)
+	MaxAcceptedRequest int `toml:"max-accepted-request"`
+
+	// Split request per number of metrics (0 = Don't split)
+	SplitRequest int `toml:"split-request"`
+
+	// Send successful response to telegraf regardless the outcome
+	ItsAllGoodMan bool `toml:"its-all-good-man"`
+
 	// Outputs is a list of backed servers where writes will be forwarded
 	Outputs []HTTPOutputConfig `toml:"output"`
 }
