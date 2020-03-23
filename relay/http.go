@@ -44,8 +44,8 @@ type HTTP struct {
 	cronJob      *cron.Cron
 	cronSchedule string
 
-	maxAcceptedRequest int
-	splitRequest int
+	maxMetricsPerRequest int
+	splitRequestPerMetrics int
 	itsAllGoodMan bool
 
 	backends []*httpBackend
@@ -103,12 +103,12 @@ func NewHTTP(cfg HTTPConfig) (Relay, error) {
 		h.cronJob = cron.New()
 	}
 
-	h.maxAcceptedRequest = cfg.MaxAcceptedRequest
-	if cfg.SplitRequest == 0 {
+	h.maxMetricsPerRequest = cfg.MaxMetricsPerRequest
+	if cfg.SplitRequestPerMetrics == 0 {
 		// Use maxint if we don't want to split
-		h.splitRequest = int(^uint(0) >> 1)
+		h.splitRequestPerMetrics = int(^uint(0) >> 1)
 	} else {
-		h.splitRequest = cfg.SplitRequest
+		h.splitRequestPerMetrics = cfg.SplitRequestPerMetrics
 	}
 	h.itsAllGoodMan = cfg.ItsAllGoodMan
 
@@ -227,7 +227,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	metricsLeft := h.splitRequest
+	metricsLeft := h.splitRequestPerMetrics
 
 	linesToSend := ""
 
@@ -270,7 +270,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				newLine = strings.TrimSuffix(newLine, ",") + " " + strconv.FormatInt(p.UnixNano(), 10) + "\n"
 				outBytes = append(outBytes, []byte(linesToSend+newLine))
 				linesToSend = ""
-				metricsLeft = h.splitRequest
+				metricsLeft = h.splitRequestPerMetrics
 				newLine = measurementAndTags + " " + field + ","
 				metricsLeft--
 			}
@@ -284,7 +284,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		totalMetrics += numOfFields
 
-		if metricsLeft < h.splitRequest {
+		if metricsLeft < h.splitRequestPerMetrics {
 			newLine = strings.TrimSuffix(newLine, ",") + " " + strconv.FormatInt(p.UnixNano(), 10) + "\n"
 			linesToSend += newLine
 		}
@@ -292,7 +292,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if metricsLeft == 0 {
 			outBytes = append(outBytes, []byte(linesToSend))
 			linesToSend = ""
-			metricsLeft = h.splitRequest
+			metricsLeft = h.splitRequestPerMetrics
 		}
 
 		/*if _, err = outBuf.WriteString(p.PrecisionString(precision)); err != nil {
@@ -308,7 +308,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		outBytes = append(outBytes, []byte(linesToSend))
 	}
 
-	if h.maxAcceptedRequest > 0 && totalMetrics > h.maxAcceptedRequest {
+	if h.maxMetricsPerRequest > 0 && totalMetrics > h.maxMetricsPerRequest {
 		log.Error("Payload too large...")
 		jsonError(w, 413, "payload too large")
 		return
