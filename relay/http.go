@@ -386,15 +386,15 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var responses = make(chan *responseData, len(h.backends)-influxdbBackends+influxdbBackends*len(outBytes))
 
-	graphiteBackend := false
+	ignoreResponses := false
 
 	if h.itsAllGoodMan {
-		graphiteBackend = true
+		ignoreResponses = true
 		w.WriteHeader(204)
 	} else {
 		for _, b := range h.backends {
 			if b.backendType == "graphite" {
-				graphiteBackend = true
+				ignoreResponses = true
 				w.WriteHeader(204)
 				break
 			}
@@ -415,7 +415,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				go func() {
 					defer wg.Done()
 					resp, err := pushToInfluxdb(b, outByte, query, authHeader)
-					if !graphiteBackend {
+					if !ignoreResponses {
 						resp.HandleResponse(h, w, b, responses, &once, err)
 					}
 				}()
@@ -473,7 +473,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			errResponse = resp
 		}
 	}
-	if !graphiteBackend {
+	if !ignoreResponses {
 		// no successful writes
 		if errResponse == nil {
 			// failed to make any valid request...
