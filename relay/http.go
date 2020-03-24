@@ -44,8 +44,8 @@ type HTTP struct {
 	cronJob      *cron.Cron
 	cronSchedule string
 
-	maxMetricsPerRequest int
-	splitRequestPerMetrics int
+	maxDatapointsPerRequest int
+	splitRequestPerDatapoints int
 	itsAllGoodMan bool
 
 	backends []*httpBackend
@@ -103,12 +103,12 @@ func NewHTTP(cfg HTTPConfig) (Relay, error) {
 		h.cronJob = cron.New()
 	}
 
-	h.maxMetricsPerRequest = cfg.MaxMetricsPerRequest
-	if cfg.SplitRequestPerMetrics == 0 {
+	h.maxDatapointsPerRequest = cfg.MaxDatapointsPerRequest
+	if cfg.SplitRequestPerDatapoints == 0 {
 		// Use maxint if we don't want to split
-		h.splitRequestPerMetrics = int(^uint(0) >> 1)
+		h.splitRequestPerDatapoints = int(^uint(0) >> 1)
 	} else {
-		h.splitRequestPerMetrics = cfg.SplitRequestPerMetrics
+		h.splitRequestPerDatapoints = cfg.SplitRequestPerDatapoints
 	}
 	h.itsAllGoodMan = cfg.ItsAllGoodMan
 
@@ -227,13 +227,15 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	metricsLeft := h.splitRequestPerMetrics
+	datapointsLeft := h.splitRequestPerDatapoints
 
 	linesToSend := ""
 
 	outBytes := [][]byte{}
 
-	totalMetrics := 0
+	totalDatapoints := 0
+
+	metricsMap := make(map[string]bool)
 
 	for _, p := range points {
 
@@ -249,6 +251,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				v, _ := f.FloatValue()
 				if utf8.ValidString(string(f.FieldKey())) {
 					field = string(f.FieldKey()) + "=" + strconv.FormatFloat(v, 'E', -1, 64)
+					metricsMap[measurementAndTags + string(f.FieldKey())] = true
 				} else {
 					continue
 				}
@@ -256,6 +259,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				v, _ := f.IntegerValue()
 				if utf8.ValidString(string(f.FieldKey())) {
 					field = string(f.FieldKey()) + "=" + strconv.FormatInt(v, 10)
+					metricsMap[measurementAndTags + string(f.FieldKey())] = true
 				} else {
 					continue
 				}
@@ -263,16 +267,16 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			if metricsLeft > 0 {
+			if datapointsLeft > 0 {
 				newLine += field + ","
-				metricsLeft--
+				datapointsLeft--
 			} else {
 				newLine = strings.TrimSuffix(newLine, ",") + " " + strconv.FormatInt(p.UnixNano(), 10) + "\n"
 				outBytes = append(outBytes, []byte(linesToSend+newLine))
 				linesToSend = ""
-				metricsLeft = h.splitRequestPerMetrics
+				datapointsLeft = h.splitRequestPerDatapoints
 				newLine = measurementAndTags + " " + field + ","
-				metricsLeft--
+				datapointsLeft--
 			}
 
 			numOfFields++
@@ -282,17 +286,17 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		totalMetrics += numOfFields
+		totalDatapoints += numOfFields
 
-		if metricsLeft < h.splitRequestPerMetrics {
+		if datapointsLeft < h.splitRequestPerDatapoints {
 			newLine = strings.TrimSuffix(newLine, ",") + " " + strconv.FormatInt(p.UnixNano(), 10) + "\n"
 			linesToSend += newLine
 		}
 
-		if metricsLeft == 0 {
+		if datapointsLeft == 0 {
 			outBytes = append(outBytes, []byte(linesToSend))
 			linesToSend = ""
-			metricsLeft = h.splitRequestPerMetrics
+			datapointsLeft = h.splitRequestPerDatapoints
 		}
 
 		/*if _, err = outBuf.WriteString(p.PrecisionString(precision)); err != nil {
@@ -308,21 +312,6 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		outBytes = append(outBytes, []byte(linesToSend))
 	}
 
-	if h.maxMetricsPerRequest > 0 && totalMetrics > h.maxMetricsPerRequest {
-		log.Error("Payload too large...")
-		jsonError(w, 413, "payload too large")
-		return
-	}
-
-	/*if err != nil {
-		for _, outByte := range outBytes {
-			putBuf(outByte)
-		}
-		jsonError(w, http.StatusInternalServerError, "problem writing points")
-		log.Error("Problem writing points")
-		return
-	}*/
-
 	machineID := ""
 	if r.Header["X-Gocky-Tag-Machine-Id"] != nil {
 		machineID = r.Header["X-Gocky-Tag-Machine-Id"][0]
@@ -333,6 +322,24 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
+	if h.maxDatapointsPerRequest > 0 && totalDatapoints > h.maxDatapointsPerRequest {
+		log.Errorf("Payload too large for resource: %s, number of metrics: %d, number of datapoints: %d\n", machineID, len(metricsMap), totalDatapoints)
+		w.WriteHeader(204)
+		return
+	}
+
+	log.Infof("Request for resource: %s, number of metrics: %d, number of datapoints: %d\n", machineID, len(metricsMap), totalDatapoints)
+
+	/*if err != nil {
+		for _, outByte := range outBytes {
+			putBuf(outByte)
+		}
+		jsonError(w, http.StatusInternalServerError, "problem writing points")
+		log.Error("Problem writing points")
+		return
+	}*/
+
 
 	if h.enableMetering {
 		orgID := "Unauthorized"

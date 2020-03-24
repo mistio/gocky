@@ -38,11 +38,11 @@ type HTTPConfig struct {
 
 	CronSchedule string `toml:"cron-schedule"`
 
-	// Max allowed number of metrics per request (0 = Accept all)
-	MaxMetricsPerRequest int `toml:"max-metrics-per-request"`
+	// Max allowed number of datapoints per request (0 = Accept all)
+	MaxDatapointsPerRequest int `toml:"max-datapoints-per-request"`
 
-	// Split request per number of metrics (0 = Don't split)
-	SplitRequestPerMetrics int `toml:"split-request-per-metrics"`
+	// Split request per number of datapoints (0 = Don't split)
+	SplitRequestPerDatapoints int `toml:"split-request-per-datapoints"`
 
 	// Send successful response to telegraf regardless the outcome
 	ItsAllGoodMan bool `toml:"its-all-good-man"`
