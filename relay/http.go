@@ -44,9 +44,9 @@ type HTTP struct {
 	cronJob      *cron.Cron
 	cronSchedule string
 
-	maxDatapointsPerRequest int
+	maxDatapointsPerRequest   int
 	splitRequestPerDatapoints int
-	itsAllGoodMan bool
+	itsAllGoodMan             bool
 
 	backends []*httpBackend
 }
@@ -58,7 +58,6 @@ const (
 
 	KB = 1024
 	MB = 1024 * KB
-
 )
 
 func NewHTTP(cfg HTTPConfig) (Relay, error) {
@@ -227,90 +226,11 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	datapointsLeft := h.splitRequestPerDatapoints
-
-	linesToSend := ""
-
 	outBytes := [][]byte{}
-
-	totalDatapoints := 0
 
 	metricsMap := make(map[string]bool)
 
-	for _, p := range points {
-
-		f := p.FieldIterator()
-		measurementAndTags := string(p.Key())
-		newLine := measurementAndTags + " "
-		field := ""
-		numOfFields := 0
-
-		for f.Next() {
-			switch f.Type() {
-			case models.Float:
-				v, _ := f.FloatValue()
-				if utf8.ValidString(string(f.FieldKey())) {
-					field = string(f.FieldKey()) + "=" + strconv.FormatFloat(v, 'E', -1, 64)
-					metricsMap[measurementAndTags + string(f.FieldKey())] = true
-				} else {
-					continue
-				}
-			case models.Integer:
-				v, _ := f.IntegerValue()
-				if utf8.ValidString(string(f.FieldKey())) {
-					field = string(f.FieldKey()) + "=" + strconv.FormatInt(v, 10)
-					metricsMap[measurementAndTags + string(f.FieldKey())] = true
-				} else {
-					continue
-				}
-			default:
-				continue
-			}
-
-			if datapointsLeft > 0 {
-				newLine += field + ","
-				datapointsLeft--
-			} else {
-				newLine = strings.TrimSuffix(newLine, ",") + " " + strconv.FormatInt(p.UnixNano(), 10) + "\n"
-				outBytes = append(outBytes, []byte(linesToSend+newLine))
-				linesToSend = ""
-				datapointsLeft = h.splitRequestPerDatapoints
-				newLine = measurementAndTags + " " + field + ","
-				datapointsLeft--
-			}
-
-			numOfFields++
-		}
-
-		if numOfFields == 0 {
-			continue
-		}
-
-		totalDatapoints += numOfFields
-
-		if datapointsLeft < h.splitRequestPerDatapoints {
-			newLine = strings.TrimSuffix(newLine, ",") + " " + strconv.FormatInt(p.UnixNano(), 10) + "\n"
-			linesToSend += newLine
-		}
-
-		if datapointsLeft == 0 {
-			outBytes = append(outBytes, []byte(linesToSend))
-			linesToSend = ""
-			datapointsLeft = h.splitRequestPerDatapoints
-		}
-
-		/*if _, err = outBuf.WriteString(p.PrecisionString(precision)); err != nil {
-			break
-		}
-
-		if err = outBuf.WriteByte('\n'); err != nil {
-			break
-		}*/
-	}
-
-	if len(linesToSend) > 0 {
-		outBytes = append(outBytes, []byte(linesToSend))
-	}
+	totalDatapoints := splitRequest2(h.splitRequestPerDatapoints, &outBytes, metricsMap, points)
 
 	machineID := ""
 	if r.Header["X-Gocky-Tag-Machine-Id"] != nil {
@@ -339,7 +259,6 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Error("Problem writing points")
 		return
 	}*/
-
 
 	if h.enableMetering {
 		orgID := "Unauthorized"
@@ -692,4 +611,157 @@ func putBuf(b *bytes.Buffer) {
 func pushToInfluxdb(b *httpBackend, buf []byte, query string, auth string) (*responseData, error) {
 	resp, err := b.post(buf, query, auth)
 	return resp, err
+}
+
+// Split requests exactly (may have bugs)
+func splitRequest(splitRequestPerDatapoints int, outBytes *[][]byte, metricsMap map[string]bool, points models.Points) int {
+	datapointsLeft := splitRequestPerDatapoints
+
+	linesToSend := ""
+
+	totalDatapoints := 0
+
+	for _, p := range points {
+
+		f := p.FieldIterator()
+		measurementAndTags := string(p.Key())
+		newLine := measurementAndTags + " "
+		field := ""
+		numOfFields := 0
+
+		for f.Next() {
+			switch f.Type() {
+			case models.Float:
+				v, _ := f.FloatValue()
+				if utf8.ValidString(string(f.FieldKey())) {
+					field = string(f.FieldKey()) + "=" + strconv.FormatFloat(v, 'E', -1, 64)
+					metricsMap[measurementAndTags+string(f.FieldKey())] = true
+				} else {
+					continue
+				}
+			case models.Integer:
+				v, _ := f.IntegerValue()
+				if utf8.ValidString(string(f.FieldKey())) {
+					field = string(f.FieldKey()) + "=" + strconv.FormatInt(v, 10)
+					metricsMap[measurementAndTags+string(f.FieldKey())] = true
+				} else {
+					continue
+				}
+			default:
+				continue
+			}
+
+			if datapointsLeft > 0 {
+				newLine += field + ","
+				datapointsLeft--
+			} else {
+				newLine = strings.TrimSuffix(newLine, ",") + " " + strconv.FormatInt(p.UnixNano(), 10) + "\n"
+				*outBytes = append(*outBytes, []byte(linesToSend+newLine))
+				linesToSend = ""
+				datapointsLeft = splitRequestPerDatapoints
+				newLine = measurementAndTags + " " + field + ","
+				datapointsLeft--
+			}
+
+			numOfFields++
+		}
+
+		if numOfFields == 0 {
+			continue
+		}
+
+		totalDatapoints += numOfFields
+
+		if datapointsLeft < splitRequestPerDatapoints {
+			newLine = strings.TrimSuffix(newLine, ",") + " " + strconv.FormatInt(p.UnixNano(), 10) + "\n"
+			linesToSend += newLine
+		}
+
+		if datapointsLeft == 0 {
+			*outBytes = append(*outBytes, []byte(linesToSend))
+			linesToSend = ""
+			datapointsLeft = splitRequestPerDatapoints
+		}
+
+		/*if _, err = outBuf.WriteString(p.PrecisionString(precision)); err != nil {
+			break
+		}
+
+		if err = outBuf.WriteByte('\n'); err != nil {
+			break
+		}*/
+	}
+
+	if len(linesToSend) > 0 {
+		*outBytes = append(*outBytes, []byte(linesToSend))
+	}
+
+	return totalDatapoints
+}
+
+// Split requests while keeping influxb lines intact
+func splitRequest2(splitRequestPerDatapoints int, outBytes *[][]byte, metricsMap map[string]bool, points models.Points) int {
+	datapointsLeft := splitRequestPerDatapoints
+
+	linesToSend := ""
+
+	totalDatapoints := 0
+
+	for _, p := range points {
+
+		f := p.FieldIterator()
+		measurementAndTags := string(p.Key())
+		newLine := measurementAndTags + " "
+		field := ""
+		numOfFields := 0
+
+		for f.Next() {
+			switch f.Type() {
+			case models.Float:
+				v, _ := f.FloatValue()
+				if utf8.ValidString(string(f.FieldKey())) {
+					field = string(f.FieldKey()) + "=" + strconv.FormatFloat(v, 'E', -1, 64)
+					metricsMap[measurementAndTags+string(f.FieldKey())] = true
+				} else {
+					continue
+				}
+			case models.Integer:
+				v, _ := f.IntegerValue()
+				if utf8.ValidString(string(f.FieldKey())) {
+					field = string(f.FieldKey()) + "=" + strconv.FormatInt(v, 10)
+					metricsMap[measurementAndTags+string(f.FieldKey())] = true
+				} else {
+					continue
+				}
+			default:
+				continue
+			}
+
+			numOfFields++
+			newLine += field + ","
+		}
+
+		if numOfFields == 0 {
+			continue
+		}
+
+		newLine = strings.TrimSuffix(newLine, ",") + " " + strconv.FormatInt(p.UnixNano(), 10) + "\n"
+
+		if datapointsLeft-numOfFields >= 0 {
+			linesToSend += newLine
+			datapointsLeft -= numOfFields
+		} else {
+			*outBytes = append(*outBytes, []byte(linesToSend))
+			linesToSend = newLine
+			datapointsLeft = splitRequestPerDatapoints - numOfFields
+		}
+
+		totalDatapoints += numOfFields
+	}
+
+	if len(linesToSend) > 0 {
+		*outBytes = append(*outBytes, []byte(linesToSend))
+	}
+
+	return totalDatapoints
 }
