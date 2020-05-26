@@ -212,7 +212,11 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_, err := bodyBuf.ReadFrom(body)
 	if err != nil {
 		putBuf(bodyBuf)
-		jsonError(w, http.StatusInternalServerError, "problem reading request body")
+		if h.itsAllGoodMan {
+			w.WriteHeader(204)
+		} else {
+			jsonError(w, http.StatusInternalServerError, "problem reading request body")
+		}
 		log.Error("Problem reading request body")
 		return
 	}
