@@ -211,13 +211,21 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	bodyBuf := getBuf()
 	_, err := bodyBuf.ReadFrom(body)
 	if err != nil {
-		putBuf(bodyBuf)
 		if h.itsAllGoodMan {
 			w.WriteHeader(204)
 		} else {
 			jsonError(w, http.StatusInternalServerError, "problem reading request body")
 		}
-		log.Error("Problem reading request body")
+		machineID := ""
+		if r.Header["X-Gocky-Tag-Machine-Id"] != nil {
+			machineID = r.Header["X-Gocky-Tag-Machine-Id"][0]
+		}
+		if log.V(5) {
+			log.Errorf("Problem reading request body from machine: %s and body %v", machineID, bodyBuf)
+		} else {
+			log.Errorf("Problem reading request body from machine: %s", machineID)
+		}
+		putBuf(bodyBuf)
 		return
 	}
 
