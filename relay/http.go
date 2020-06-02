@@ -272,12 +272,12 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}*/
 
-	if h.enableMetering {
-		orgID := "Unauthorized"
-		if r.Header["X-Gocky-Tag-Org-Id"] != nil {
-			orgID = r.Header["X-Gocky-Tag-Org-Id"][0]
-		}
+	orgID := "Unauthorized"
+	if r.Header["X-Gocky-Tag-Org-Id"] != nil {
+		orgID = r.Header["X-Gocky-Tag-Org-Id"][0]
+	}
 
+	if h.enableMetering {
 		mu.Lock()
 
 		_, orgExists := metering[orgID]
@@ -352,7 +352,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				outByte := outBytes[i]
 				go func() {
 					defer wg.Done()
-					resp, err := pushToInfluxdb(b, outByte, query, authHeader)
+					resp, err := pushToInfluxdb(b, outByte, query, authHeader, orgID)
 					if !ignoreResponses {
 						resp.HandleResponse(h, w, b, responses, &once, err)
 					}
@@ -483,7 +483,7 @@ func jsonError(w http.ResponseWriter, code int, message string) {
 }
 
 type poster interface {
-	post([]byte, string, string) (*responseData, error)
+	post([]byte, string, string, string) (*responseData, error)
 }
 
 type simplePoster struct {
@@ -509,7 +509,7 @@ func newSimplePoster(location string, timeout time.Duration, skipTLSVerification
 	}
 }
 
-func (b *simplePoster) post(buf []byte, query string, auth string) (*responseData, error) {
+func (b *simplePoster) post(buf []byte, query string, auth string, org string) (*responseData, error) {
 	req, err := http.NewRequest("POST", b.location, bytes.NewReader(buf))
 	if err != nil {
 		return nil, err
@@ -521,6 +521,7 @@ func (b *simplePoster) post(buf []byte, query string, auth string) (*responseDat
 	if auth != "" {
 		req.Header.Set("Authorization", auth)
 	}
+	req.Header.Set("x-org-id", org)
 
 	resp, err := b.client.Do(req)
 	if err != nil {
@@ -620,8 +621,8 @@ func putBuf(b *bytes.Buffer) {
 	bufPool.Put(b)
 }
 
-func pushToInfluxdb(b *httpBackend, buf []byte, query string, auth string) (*responseData, error) {
-	resp, err := b.post(buf, query, auth)
+func pushToInfluxdb(b *httpBackend, buf []byte, query string, auth string, org string) (*responseData, error) {
+	resp, err := b.post(buf, query, auth, org)
 	return resp, err
 }
 
