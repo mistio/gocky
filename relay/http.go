@@ -242,7 +242,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	metricsMap := make(map[string]bool)
 
-	totalDatapoints := splitRequest2(h.splitRequestPerDatapoints, &outBytes, metricsMap, points)
+	totalDatapoints := splitRequest(h.splitRequestPerDatapoints, &outBytes, metricsMap, points)
 
 	machineID := ""
 	if r.Header["X-Gocky-Tag-Machine-Id"] != nil {
@@ -262,15 +262,6 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Infof("Request for resource: %s, number of metrics: %d, number of datapoints: %d\n", machineID, len(metricsMap), totalDatapoints)
-
-	/*if err != nil {
-		for _, outByte := range outBytes {
-			putBuf(outByte)
-		}
-		jsonError(w, http.StatusInternalServerError, "problem writing points")
-		log.Error("Problem writing points")
-		return
-	}*/
 
 	orgID := "Unauthorized"
 	if r.Header["X-Gocky-Tag-Org-Id"] != nil {
@@ -303,8 +294,6 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// normalize query string
 	query := queryParams.Encode()
-
-	//outBytes := outBuf.Bytes()
 
 	// check for authorization performed via the header
 	authHeader := r.Header.Get("Authorization")
@@ -390,9 +379,6 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		wg.Wait()
 		close(responses)
-		/*for _, outByte := range outBytes {
-			putBuf(outByte)
-		}*/
 	}()
 
 	var errResponse *responseData
@@ -626,94 +612,8 @@ func pushToInfluxdb(b *httpBackend, buf []byte, query string, auth string, org s
 	return resp, err
 }
 
-// Split requests exactly (may have bugs)
-func splitRequest(splitRequestPerDatapoints int, outBytes *[][]byte, metricsMap map[string]bool, points models.Points) int {
-	datapointsLeft := splitRequestPerDatapoints
-
-	linesToSend := ""
-
-	totalDatapoints := 0
-
-	for _, p := range points {
-
-		f := p.FieldIterator()
-		measurementAndTags := string(p.Key())
-		newLine := measurementAndTags + " "
-		field := ""
-		numOfFields := 0
-
-		for f.Next() {
-			switch f.Type() {
-			case models.Float:
-				v, _ := f.FloatValue()
-				if utf8.ValidString(string(f.FieldKey())) {
-					field = string(f.FieldKey()) + "=" + strconv.FormatFloat(v, 'E', -1, 64)
-					metricsMap[measurementAndTags+string(f.FieldKey())] = true
-				} else {
-					continue
-				}
-			case models.Integer:
-				v, _ := f.IntegerValue()
-				if utf8.ValidString(string(f.FieldKey())) {
-					field = string(f.FieldKey()) + "=" + strconv.FormatInt(v, 10)
-					metricsMap[measurementAndTags+string(f.FieldKey())] = true
-				} else {
-					continue
-				}
-			default:
-				continue
-			}
-
-			if datapointsLeft > 0 {
-				newLine += field + ","
-				datapointsLeft--
-			} else {
-				newLine = strings.TrimSuffix(newLine, ",") + " " + strconv.FormatInt(p.UnixNano(), 10) + "\n"
-				*outBytes = append(*outBytes, []byte(linesToSend+newLine))
-				linesToSend = ""
-				datapointsLeft = splitRequestPerDatapoints
-				newLine = measurementAndTags + " " + field + ","
-				datapointsLeft--
-			}
-
-			numOfFields++
-		}
-
-		if numOfFields == 0 {
-			continue
-		}
-
-		totalDatapoints += numOfFields
-
-		if datapointsLeft < splitRequestPerDatapoints {
-			newLine = strings.TrimSuffix(newLine, ",") + " " + strconv.FormatInt(p.UnixNano(), 10) + "\n"
-			linesToSend += newLine
-		}
-
-		if datapointsLeft == 0 {
-			*outBytes = append(*outBytes, []byte(linesToSend))
-			linesToSend = ""
-			datapointsLeft = splitRequestPerDatapoints
-		}
-
-		/*if _, err = outBuf.WriteString(p.PrecisionString(precision)); err != nil {
-			break
-		}
-
-		if err = outBuf.WriteByte('\n'); err != nil {
-			break
-		}*/
-	}
-
-	if len(linesToSend) > 0 {
-		*outBytes = append(*outBytes, []byte(linesToSend))
-	}
-
-	return totalDatapoints
-}
-
 // Split requests while keeping influxb lines intact
-func splitRequest2(splitRequestPerDatapoints int, outBytes *[][]byte, metricsMap map[string]bool, points models.Points) int {
+func splitRequest(splitRequestPerDatapoints int, outBytes *[][]byte, metricsMap map[string]bool, points models.Points) int {
 	datapointsLeft := splitRequestPerDatapoints
 
 	linesToSend := ""
