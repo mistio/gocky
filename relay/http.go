@@ -14,6 +14,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	log "github.com/golang/glog"
 
@@ -42,6 +43,10 @@ type HTTP struct {
 
 	cronJob      *cron.Cron
 	cronSchedule string
+
+	maxDatapointsPerRequest   int
+	splitRequestPerDatapoints int
+	itsAllGoodMan             bool
 
 	backends []*httpBackend
 }
@@ -96,6 +101,15 @@ func NewHTTP(cfg HTTPConfig) (Relay, error) {
 	if h.cronSchedule != "" {
 		h.cronJob = cron.New()
 	}
+
+	h.maxDatapointsPerRequest = cfg.MaxDatapointsPerRequest
+	if cfg.SplitRequestPerDatapoints == 0 {
+		// Use maxint if we don't want to split
+		h.splitRequestPerDatapoints = int(^uint(0) >> 1)
+	} else {
+		h.splitRequestPerDatapoints = cfg.SplitRequestPerDatapoints
+	}
+	h.itsAllGoodMan = cfg.ItsAllGoodMan
 
 	return h, nil
 }
@@ -197,9 +211,21 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	bodyBuf := getBuf()
 	_, err := bodyBuf.ReadFrom(body)
 	if err != nil {
+		if h.itsAllGoodMan {
+			w.WriteHeader(204)
+		} else {
+			jsonError(w, http.StatusInternalServerError, "problem reading request body")
+		}
+		machineID := ""
+		if r.Header["X-Gocky-Tag-Machine-Id"] != nil {
+			machineID = r.Header["X-Gocky-Tag-Machine-Id"][0]
+		}
+		if log.V(5) {
+			log.Errorf("Problem reading request body from machine: %s and body %v", machineID, bodyBuf)
+		} else {
+			log.Errorf("Problem reading request body from machine: %s", machineID)
+		}
 		putBuf(bodyBuf)
-		jsonError(w, http.StatusInternalServerError, "problem reading request body")
-		log.Error("Problem reading request body")
 		return
 	}
 
@@ -212,22 +238,11 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	outBuf := getBuf()
-	for _, p := range points {
-		if _, err = outBuf.WriteString(p.PrecisionString(precision)); err != nil {
-			break
-		}
-		if err = outBuf.WriteByte('\n'); err != nil {
-			break
-		}
-	}
+	outBytes := [][]byte{}
 
-	if err != nil {
-		putBuf(outBuf)
-		jsonError(w, http.StatusInternalServerError, "problem writing points")
-		log.Error("Problem writing points")
-		return
-	}
+	metricsMap := make(map[string]bool)
+
+	totalDatapoints := splitRequest(h.splitRequestPerDatapoints, &outBytes, metricsMap, points)
 
 	machineID := ""
 	if r.Header["X-Gocky-Tag-Machine-Id"] != nil {
@@ -240,12 +255,20 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if h.enableMetering {
-		orgID := "Unauthorized"
-		if r.Header["X-Gocky-Tag-Org-Id"] != nil {
-			orgID = r.Header["X-Gocky-Tag-Org-Id"][0]
-		}
+	if h.maxDatapointsPerRequest > 0 && totalDatapoints > h.maxDatapointsPerRequest {
+		log.Errorf("Payload too large for resource: %s, number of metrics: %d, number of datapoints: %d\n", machineID, len(metricsMap), totalDatapoints)
+		w.WriteHeader(204)
+		return
+	}
 
+	log.Infof("Request for resource: %s, number of metrics: %d, number of datapoints: %d\n", machineID, len(metricsMap), totalDatapoints)
+
+	orgID := "Unauthorized"
+	if r.Header["X-Gocky-Tag-Org-Id"] != nil {
+		orgID = r.Header["X-Gocky-Tag-Org-Id"][0]
+	}
+
+	if h.enableMetering {
 		mu.Lock()
 
 		_, orgExists := metering[orgID]
@@ -272,25 +295,36 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// normalize query string
 	query := queryParams.Encode()
 
-	outBytes := outBuf.Bytes()
-
 	// check for authorization performed via the header
 	authHeader := r.Header.Get("Authorization")
 
+	influxdbBackends := 0
+
+	for _, b := range h.backends {
+		if b.backendType == "influxdb" {
+			influxdbBackends++
+		}
+	}
+
 	var wg sync.WaitGroup
-	wg.Add(len(h.backends))
+	wg.Add(len(h.backends) - influxdbBackends + influxdbBackends*len(outBytes))
 
 	var once sync.Once
 
-	var responses = make(chan *responseData, len(h.backends))
+	var responses = make(chan *responseData, len(h.backends)-influxdbBackends+influxdbBackends*len(outBytes))
 
-	graphiteBackend := false
+	ignoreResponses := false
 
-	for _, b := range h.backends {
-		if b.backendType == "graphite" {
-			graphiteBackend = true
-			w.WriteHeader(204)
-			break
+	if h.itsAllGoodMan {
+		ignoreResponses = true
+		w.WriteHeader(204)
+	} else {
+		for _, b := range h.backends {
+			if b.backendType == "graphite" {
+				ignoreResponses = true
+				w.WriteHeader(204)
+				break
+			}
 		}
 	}
 
@@ -303,13 +337,16 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				log.Error("Missing parameter: db")
 				return
 			}
-			go func() {
-				defer wg.Done()
-				resp, err := pushToInfluxdb(b, outBytes, query, authHeader)
-				if !graphiteBackend {
-					resp.HandleResponse(h, w, b, responses, &once, err)
-				}
-			}()
+			for i := range outBytes {
+				outByte := outBytes[i]
+				go func() {
+					defer wg.Done()
+					resp, err := pushToInfluxdb(b, outByte, query, authHeader, orgID)
+					if !ignoreResponses {
+						resp.HandleResponse(h, w, b, responses, &once, err)
+					}
+				}()
+			}
 		} else if b.backendType == "graphite" {
 			graphiteServers := make([]string, 1)
 			graphiteServers[0] = b.location
@@ -342,7 +379,6 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		wg.Wait()
 		close(responses)
-		putBuf(outBuf)
 	}()
 
 	var errResponse *responseData
@@ -361,7 +397,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			errResponse = resp
 		}
 	}
-	if !graphiteBackend {
+	if !ignoreResponses {
 		// no successful writes
 		if errResponse == nil {
 			// failed to make any valid request...
@@ -433,7 +469,7 @@ func jsonError(w http.ResponseWriter, code int, message string) {
 }
 
 type poster interface {
-	post([]byte, string, string) (*responseData, error)
+	post([]byte, string, string, string) (*responseData, error)
 }
 
 type simplePoster struct {
@@ -459,7 +495,7 @@ func newSimplePoster(location string, timeout time.Duration, skipTLSVerification
 	}
 }
 
-func (b *simplePoster) post(buf []byte, query string, auth string) (*responseData, error) {
+func (b *simplePoster) post(buf []byte, query string, auth string, org string) (*responseData, error) {
 	req, err := http.NewRequest("POST", b.location, bytes.NewReader(buf))
 	if err != nil {
 		return nil, err
@@ -471,6 +507,7 @@ func (b *simplePoster) post(buf []byte, query string, auth string) (*responseDat
 	if auth != "" {
 		req.Header.Set("Authorization", auth)
 	}
+	req.Header.Set("x-org-id", org)
 
 	resp, err := b.client.Do(req)
 	if err != nil {
@@ -570,7 +607,74 @@ func putBuf(b *bytes.Buffer) {
 	bufPool.Put(b)
 }
 
-func pushToInfluxdb(b *httpBackend, buf []byte, query string, auth string) (*responseData, error) {
-	resp, err := b.post(buf, query, auth)
+func pushToInfluxdb(b *httpBackend, buf []byte, query string, auth string, org string) (*responseData, error) {
+	resp, err := b.post(buf, query, auth, org)
 	return resp, err
+}
+
+// Split requests while keeping influxb lines intact
+func splitRequest(splitRequestPerDatapoints int, outBytes *[][]byte, metricsMap map[string]bool, points models.Points) int {
+	datapointsLeft := splitRequestPerDatapoints
+
+	linesToSend := ""
+
+	totalDatapoints := 0
+
+	for _, p := range points {
+
+		f := p.FieldIterator()
+		measurementAndTags := string(p.Key())
+		newLine := measurementAndTags + " "
+		field := ""
+		numOfFields := 0
+
+		for f.Next() {
+			switch f.Type() {
+			case models.Float:
+				v, _ := f.FloatValue()
+				if utf8.ValidString(string(f.FieldKey())) {
+					field = string(f.FieldKey()) + "=" + strconv.FormatFloat(v, 'E', -1, 64)
+					metricsMap[measurementAndTags+string(f.FieldKey())] = true
+				} else {
+					continue
+				}
+			case models.Integer:
+				v, _ := f.IntegerValue()
+				if utf8.ValidString(string(f.FieldKey())) {
+					field = string(f.FieldKey()) + "=" + strconv.FormatInt(v, 10)
+					metricsMap[measurementAndTags+string(f.FieldKey())] = true
+				} else {
+					continue
+				}
+			default:
+				continue
+			}
+
+			numOfFields++
+			newLine += field + ","
+		}
+
+		if numOfFields == 0 {
+			continue
+		}
+
+		newLine = strings.TrimSuffix(newLine, ",") + " " + strconv.FormatInt(p.UnixNano(), 10) + "\n"
+
+		if datapointsLeft-numOfFields >= 0 {
+			linesToSend += newLine
+			datapointsLeft -= numOfFields
+		} else {
+			*outBytes = append(*outBytes, []byte(linesToSend))
+			linesToSend = newLine
+			datapointsLeft = splitRequestPerDatapoints - numOfFields
+		}
+
+		totalDatapoints += numOfFields
+	}
+
+	if len(linesToSend) > 0 {
+		*outBytes = append(*outBytes, []byte(linesToSend))
+	}
+
+	return totalDatapoints
 }

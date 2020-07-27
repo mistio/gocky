@@ -12,6 +12,14 @@ WORKDIR /go/src/github.com/influxdata/influxdb
 
 RUN git checkout v1.7.7
 
+WORKDIR /go/src/github.com/influxdata
+
+RUN git clone https://github.com/influxdata/telegraf
+
+WORKDIR /go/src/github.com/influxdata/telegraf
+
+RUN git checkout v1.14.3
+
 WORKDIR /go/src/github.com/wavefronthq/
 
 RUN git clone https://github.com/wavefrontHQ/wavefront-sdk-go
