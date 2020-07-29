@@ -238,6 +238,23 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	graphiteBuf := getBuf()
+	for _, p := range points {
+		if _, err = graphiteBuf.WriteString(p.PrecisionString(precision)); err != nil {
+			break
+		}
+		if err = graphiteBuf.WriteByte('\n'); err != nil {
+			break
+		}
+	}
+
+	if err != nil {
+		putBuf(graphiteBuf)
+		jsonError(w, http.StatusInternalServerError, "problem writing points")
+		log.Error("Problem writing points")
+		return
+	}
+
 	outBytes := [][]byte{}
 
 	metricsMap := make(map[string]bool)
@@ -361,7 +378,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				log.Fatalf("Could not connect to graphite: %s", conErr)
 			}
 
-			newPoints, err := models.ParsePointsWithPrecision(bodyBuf.Bytes(), start, precision)
+			newPoints, err := models.ParsePointsWithPrecision(graphiteBuf.Bytes(), start, precision)
 			if err != nil {
 				jsonError(w, http.StatusBadRequest, "unable to parse points")
 				log.Error("Unable to parse points")
