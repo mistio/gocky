@@ -259,7 +259,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	metricsMap := make(map[string]bool)
 
-	totalDatapoints := splitRequest(h.splitRequestPerDatapoints, &outBytes, metricsMap, points)
+	totalDatapoints := parseRequest(h.splitRequestPerDatapoints, &outBytes, metricsMap, points)
 
 	machineID := ""
 	if r.Header["X-Gocky-Tag-Machine-Id"] != nil {
@@ -629,8 +629,8 @@ func pushToInfluxdb(b *httpBackend, buf []byte, query string, auth string, org s
 	return resp, err
 }
 
-// Split requests while keeping influxb lines intact
-func splitRequest(splitRequestPerDatapoints int, outBytes *[][]byte, metricsMap map[string]bool, points models.Points) int {
+// Parses and counts influxdb points. Optionally splits them into multiple requests.
+func parseRequest(splitRequestPerDatapoints int, outBytes *[][]byte, metricsMap map[string]bool, points models.Points) int {
 	datapointsLeft := splitRequestPerDatapoints
 
 	linesToSend := ""
