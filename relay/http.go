@@ -362,6 +362,9 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					if !ignoreResponses {
 						resp.HandleResponse(h, w, b, responses, &once, err)
 					} else {
+						if resp == nil {
+							log.Errorf("nil response for relay %q backend %q: %v", h.Name(), b.name)
+						}
 						switch resp.StatusCode / 100 {
 						case 4:
 							// user error
