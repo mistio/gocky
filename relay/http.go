@@ -361,6 +361,14 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					resp, err := pushToInfluxdb(b, outByte, query, authHeader, orgID)
 					if !ignoreResponses {
 						resp.HandleResponse(h, w, b, responses, &once, err)
+					} else {
+						switch resp.StatusCode / 100 {
+						case 4:
+							// user error
+							log.Errorf("4xx response for relay %q backend %q: %v", h.Name(), b.name, resp.StatusCode)
+						case 5:
+							log.Errorf("5xx response for relay %q backend %q: %v", h.Name(), b.name, resp.StatusCode)
+						}
 					}
 				}()
 			}
