@@ -623,6 +623,7 @@ func putBuf(b *bytes.Buffer) {
 
 func pushToInfluxdb(b *httpBackend, buf []byte, query string, auth string, org string) (*responseData, error) {
 	resp, err := b.post(buf, query, auth, org)
+	// These retries are necessary because by default we use the simplePoster which has no retries
 	for i := 0; i < 3; i++ {
 		if err == nil {
 			break
