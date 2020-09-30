@@ -52,8 +52,8 @@ type HTTP struct {
 }
 
 const (
-	DefaultHTTPTimeout      = 7 * time.Second
-	DefaultMaxDelayInterval = 1 * time.Second
+	DefaultHTTPTimeout      = 10 * time.Second
+	DefaultMaxDelayInterval = 10 * time.Second
 	DefaultBatchSizeKB      = 512
 
 	KB = 1024
@@ -626,6 +626,15 @@ func putBuf(b *bytes.Buffer) {
 
 func pushToInfluxdb(b *httpBackend, buf []byte, query string, auth string, org string) (*responseData, error) {
 	resp, err := b.post(buf, query, auth, org)
+	for i := 0; i < 3; i++ {
+		if err == nil {
+			break
+		}
+		log.Error(err)
+		log.Errorf("Retrying to send datapoints to influxdb backend: %s\n", b.location)
+		time.Sleep(1000 * time.Millisecond)
+		resp, err = b.post(buf, query, auth)
+	}
 	return resp, err
 }
 
