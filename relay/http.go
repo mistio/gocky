@@ -359,8 +359,13 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				go func() {
 					defer wg.Done()
 					resp, err := pushToInfluxdb(b, outByte, query, authHeader, orgID)
+					if err != nil {
+						log.Errorf("Problem posting to relay %q backend %q: %v", h.Name(), b.name, err)
+					} else if resp.StatusCode / 100 == 5 {
+						log.Errorf("5xx response for relay %q backend %q: %v", h.Name(), b.name, resp.StatusCode)
+					}
 					if !ignoreResponses {
-						resp.HandleResponse(h, w, b, responses, &once, err)
+						resp.HandleResponse(h, w, b, responses, &once)
 					}
 				}()
 			}
@@ -448,7 +453,7 @@ func (rd *responseData) Write(w http.ResponseWriter) {
 	w.Write(rd.Body)
 }
 
-func (rd *responseData) HandleResponse(h *HTTP, w http.ResponseWriter, b *httpBackend, responses chan *responseData, once *sync.Once, err error) {
+func (rd *responseData) HandleResponse(h *HTTP, w http.ResponseWriter, b *httpBackend, responses chan *responseData, once *sync.Once) {
 
 	onFirstSuccess := func() {
 		w.WriteHeader(http.StatusNoContent)
@@ -458,11 +463,6 @@ func (rd *responseData) HandleResponse(h *HTTP, w http.ResponseWriter, b *httpBa
 		rd.Write(w)
 	}
 
-	if err != nil {
-		log.Errorf("Problem posting to relay %q backend %q: %v", h.Name(), b.name, err)
-		return
-	}
-
 	switch rd.StatusCode / 100 {
 	case 2:
 		once.Do(onFirstSuccess)
@@ -470,9 +470,6 @@ func (rd *responseData) HandleResponse(h *HTTP, w http.ResponseWriter, b *httpBa
 	case 4:
 		// user error
 		once.Do(onFirstUserError)
-
-	case 5:
-		log.Errorf("5xx response for relay %q backend %q: %v", h.Name(), b.name, rd.StatusCode)
 	}
 	responses <- rd
 }
@@ -633,7 +630,7 @@ func pushToInfluxdb(b *httpBackend, buf []byte, query string, auth string, org s
 		log.Error(err)
 		log.Errorf("Retrying to send datapoints to influxdb backend: %s\n", b.location)
 		time.Sleep(1000 * time.Millisecond)
-		resp, err = b.post(buf, query, auth)
+		resp, err = b.post(buf, query, auth, org)
 	}
 	return resp, err
 }
