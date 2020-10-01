@@ -52,8 +52,8 @@ type HTTP struct {
 }
 
 const (
-	DefaultHTTPTimeout      = 7 * time.Second
-	DefaultMaxDelayInterval = 1 * time.Second
+	DefaultHTTPTimeout      = 10 * time.Second
+	DefaultMaxDelayInterval = 10 * time.Second
 	DefaultBatchSizeKB      = 512
 
 	KB = 1024
@@ -359,8 +359,13 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				go func() {
 					defer wg.Done()
 					resp, err := pushToInfluxdb(b, outByte, query, authHeader, orgID)
+					if err != nil {
+						log.Errorf("Problem posting to relay %q backend %q: %v", h.Name(), b.name, err)
+					} else if resp.StatusCode / 100 == 5 {
+						log.Errorf("5xx response for relay %q backend %q: %v", h.Name(), b.name, resp.StatusCode)
+					}
 					if !ignoreResponses {
-						resp.HandleResponse(h, w, b, responses, &once, err)
+						resp.HandleResponse(h, w, b, responses, &once)
 					}
 				}()
 			}
@@ -448,7 +453,7 @@ func (rd *responseData) Write(w http.ResponseWriter) {
 	w.Write(rd.Body)
 }
 
-func (rd *responseData) HandleResponse(h *HTTP, w http.ResponseWriter, b *httpBackend, responses chan *responseData, once *sync.Once, err error) {
+func (rd *responseData) HandleResponse(h *HTTP, w http.ResponseWriter, b *httpBackend, responses chan *responseData, once *sync.Once) {
 
 	onFirstSuccess := func() {
 		w.WriteHeader(http.StatusNoContent)
@@ -458,11 +463,6 @@ func (rd *responseData) HandleResponse(h *HTTP, w http.ResponseWriter, b *httpBa
 		rd.Write(w)
 	}
 
-	if err != nil {
-		log.Errorf("Problem posting to relay %q backend %q: %v", h.Name(), b.name, err)
-		return
-	}
-
 	switch rd.StatusCode / 100 {
 	case 2:
 		once.Do(onFirstSuccess)
@@ -470,9 +470,6 @@ func (rd *responseData) HandleResponse(h *HTTP, w http.ResponseWriter, b *httpBa
 	case 4:
 		// user error
 		once.Do(onFirstUserError)
-
-	case 5:
-		log.Errorf("5xx response for relay %q backend %q: %v", h.Name(), b.name, rd.StatusCode)
 	}
 	responses <- rd
 }
@@ -626,6 +623,16 @@ func putBuf(b *bytes.Buffer) {
 
 func pushToInfluxdb(b *httpBackend, buf []byte, query string, auth string, org string) (*responseData, error) {
 	resp, err := b.post(buf, query, auth, org)
+	// These retries are necessary because by default we use the simplePoster which has no retries
+	for i := 0; i < 3; i++ {
+		if err == nil {
+			break
+		}
+		log.Error(err)
+		log.Errorf("Retrying to send datapoints to influxdb backend: %s\n", b.location)
+		time.Sleep(1000 * time.Millisecond)
+		resp, err = b.post(buf, query, auth, org)
+	}
 	return resp, err
 }
 
